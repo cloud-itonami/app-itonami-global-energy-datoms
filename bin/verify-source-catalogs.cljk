@@ -1,4 +1,4 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 (ns verify-source-catalogs (:require [edamame.core :as edn]))
 (def fs (js/require "fs")) (def path (js/require "path")) (def crypto (js/require "crypto"))
 (def root (or (first *command-line-args*) ".sources"))
