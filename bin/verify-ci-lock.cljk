@@ -1,4 +1,4 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 (require '[kotoba.lang.text :as str] '[edamame.core :as edn])
 (def fs (js/require "fs"))
 (let [lock (edn/parse-string (.toString (.readFileSync fs "sources.lock.edn"))) workflow (.toString (.readFileSync fs ".github/workflows/contract.yml"))]

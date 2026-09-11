@@ -11,7 +11,7 @@
 - `connections/actors.edn` は actor／他リポジトリごとの read-only 接続契約。
 - `adapters/read_only.cljk` は公開済み query だけを実行する Datascript consumer adapter。
 
-再生成は、同階層の各 source dataset を取得後、`npx nbb bin/build.cljk ..` を実行する。入力の raw snapshot は各 source dataset の annex 管理対象であり、ビルドはネットワークへアクセスしない。UN SDG の M49 は、固定した UN M49→ISO3 対応表だけで ISO3 に結合する。
+再生成は、同階層の各 source dataset を取得後、`kbb --backend sci bin/build.cljk ..` を実行する。入力の raw snapshot は各 source dataset の annex 管理対象であり、ビルドはネットワークへアクセスしない。UN SDG の M49 は、固定した UN M49→ISO3 対応表だけで ISO3 に結合する。
 
 Data contract は年・出典を属性として保持する。異なる年や方法論の値を同一観測値として上書きしない。
 
