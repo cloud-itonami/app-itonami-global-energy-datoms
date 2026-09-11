@@ -11,6 +11,6 @@
   {:criterion :locked-source-revisions :status :met :evidence "sources.lock.edn + contract.yml の immutable revision checkout"}
   {:criterion :ci-contract-validation :status :met :evidence "GitHub Actions: source hash verification → deterministic build → generated diff gate → Datascript contract test"}
   {:criterion :automated-refresh :status :met :evidence ".github/workflows/upstream-drift.yml。週次のread-only drift reportで、raw・lock・公開物を自動更新しない"}
-  {:criterion :read-only-consumer-adapter :status :met :evidence "adapters/read_only.clj + connections/actors.edn"}
+  {:criterion :read-only-consumer-adapter :status :met :evidence "adapters/read_only.cljk + connections/actors.edn"}
   {:criterion :coverage-quality-gate :status :met :evidence "data/quality-report.edn + query_contract.clj。出典別ISO3件数・UN公式crosswalk・必須provenanceを下限検証"}
   {:criterion :official-m49-iso3-crosswalk :status :met :evidence "org.un.unstats/raw/m49/overview-en.html → derived/m49-iso3.edn。UN SDG entityへ :country/iso3 を付与"}]}

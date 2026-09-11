@@ -47,14 +47,14 @@ jobs:
         with:
           cli: latest
       - name: Verify source hashes and git-annex pointers
-        run: npx nbb bin/verify-source-catalogs.cljs .sources
+        run: npx nbb bin/verify-source-catalogs.cljk .sources
       - name: Verify CI source lock
-        run: npx nbb bin/verify-ci-lock.cljs
+        run: npx nbb bin/verify-ci-lock.cljk
       - name: Rebuild committed projections
-        run: npx nbb bin/build.cljs .sources
+        run: npx nbb bin/build.cljk .sources
       - name: Build coverage-quality report
-        run: npx nbb bin/build-quality-report.cljs
+        run: npx nbb bin/build-quality-report.cljk
       - name: Reject stale generated datoms
         run: git diff --exit-code -- data
       - name: Exercise Datascript query contract
-        run: clojure -M test/query_contract.clj
+        run: clojure -M test/query_contract.cljk

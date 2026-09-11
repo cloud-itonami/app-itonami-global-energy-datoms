@@ -34,4 +34,4 @@ jobs:
       - name: Install NBB report runtime
         run: npm install --no-save --ignore-scripts nbb@1.3.204
       - name: Report upstream byte drift
-        run: npx nbb bin/report-upstream-drift.cljs .sources
+        run: npx nbb bin/report-upstream-drift.cljk .sources
