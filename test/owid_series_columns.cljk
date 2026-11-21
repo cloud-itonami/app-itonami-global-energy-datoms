@@ -1,0 +1,125 @@
+#!/usr/bin/env nbb
+(ns owid-series-columns-test
+  "Prove bin/build-owid-series.cljk reads the OWID CSV columns by name.
+
+  usage: nbb test/owid_series_columns.cljk
+
+  Background: the upstream export swapped the positions of the Oil and Gas
+  columns between the July and November snapshots, so a positional read
+  would silently write wrong data. This test:
+
+  1. builds the series from a fixture copy of the real November CSV and
+     from a copy with the fuel columns in a different (reversed) order,
+     and asserts byte-identical output;
+  2. asserts the fixture build equals the committed files byte for byte
+     (so the fixtures exercise the real code path, not a toy);
+  3. builds from a copy with one expected fuel column removed and asserts
+     the build fails loudly, naming the missing column, and writes nothing.
+
+  Reads the pinned input and writes scratch files only (fixtures and
+  outputs under a fresh os.tmpdir directory)."
+  (:require [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def os (js/require "os"))
+(def crypto (js/require "crypto"))
+(def child (js/require "child_process"))
+
+(assert (.existsSync fs "sources.lock.edn")
+        "run this test from the repository root")
+(assert (.existsSync fs "bin/build-owid-series.cljk")
+        "missing bin/build-owid-series.cljk")
+
+(def snapshot-path "raw/grapher/2026-11-21/electricity-prod-source-stacked.csv")
+(def real-csv (.join path ".sources" "org.ourworldindata" snapshot-path))
+(assert (.existsSync fs real-csv)
+        (str "pinned OWID input is missing: " real-csv
+             " (fetch the revision pinned in sources.lock.edn first)"))
+(def real-catalog
+  (edn/parse-string (.toString (.readFileSync fs (.join path ".sources" "org.ourworldindata"
+                                                              "raw/source-catalog.edn")))))
+(def real-release
+  (:retrieved-at (first (filter #(= snapshot-path (:path %)) (:sources real-catalog)))))
+(assert (string? real-release) "pinned catalog has no :retrieved-at for the snapshot row")
+
+(def workdir (.mkdtempSync fs (.join path (.tmpdir os) "owid-series-columns-")))
+(def out-names ["owid-electricity-1920-2025.datascript-tx.edn"
+                "owid-electricity-1920-2025.kotoba.edn"
+                "owid-electricity-1920-2025.quality-report.edn"])
+
+(defn sha256-file [p]
+  (.digest (.update (.createHash crypto "sha256") (.readFileSync fs p)) "hex"))
+
+(defn write-fixture
+  "Copy the real CSV into a fixture source root, transforming the rows
+  with f (header line first). Writes the minimal catalog carrying the
+  real release so the build derives the same release and tx."
+  [root-name f]
+  (let [root (.join path workdir root-name)
+        csv-dir (.join path root "org.ourworldindata" "raw/grapher/2026-11-21")]
+    (.mkdirSync fs csv-dir #js {:recursive true})
+    (let [text (.toString (.readFileSync fs real-csv))
+          lines (.split text "\n")
+          kept (filter #(pos? (.-length %)) lines)]
+      (.writeFileSync fs (.join path csv-dir "electricity-prod-source-stacked.csv")
+                      (str (.join (clj->js (f (js->clj kept))) "\n"))))
+    (.writeFileSync fs (.join path root "org.ourworldindata" "raw/source-catalog.edn")
+                    (pr-str {:sources [{:source/id :t/owid-snapshot
+                                        :path snapshot-path
+                                        :retrieved-at real-release}]}))
+    root))
+
+(defn permute-columns
+  "Reorder each row's columns by idx-permutation (a vector mapping new
+  positions to old positions)."
+  [idx-permutation rows]
+  (map (fn [line]
+         (let [cols (.split line ",")]
+           (.join (clj->js (map #(aget cols %) idx-permutation)) ",")))
+       rows))
+
+(def header (js->clj (.split (first (.split (.toString (.readFileSync fs real-csv)) "\n")) ",")))
+(def fuel-indexes (map #(.indexOf (clj->js header) %) ["Other renewables" "Bioenergy" "Solar" "Wind" "Hydropower" "Nuclear" "Gas" "Oil" "Coal"]))
+(assert (every? #(>= % 0) fuel-indexes) "fixture setup: a fuel column is missing from the real CSV")
+(def keep-indexes [0 1 2])
+(def reversed-permutation
+  (vec (concat keep-indexes (reverse fuel-indexes))))
+
+(defn run-build [root out]
+  (.mkdirSync fs out #js {:recursive true})
+  (.spawnSync child "nbb" (clj->js ["bin/build-owid-series.cljk" root out])
+              #js {:encoding "utf8"}))
+
+(defn check [cond* message]
+  (assert cond* (str "FAIL: " message))
+  (println (str "ok: " message)))
+
+(let [root-a (write-fixture "sources-a" identity)
+      root-b (write-fixture "sources-b" (partial permute-columns reversed-permutation))
+      out-a (.join path workdir "out-a")
+      out-b (.join path workdir "out-b")
+      res-a (run-build root-a out-a)
+      res-b (run-build root-b out-b)
+      _ (check (= 0 (.-status res-a))
+               (str "original-order fixture build exits 0" (when (not= 0 (.-status res-a)) (str ": " (.-stderr res-a)))))
+      _ (check (= 0 (.-status res-b))
+               (str "reordered-columns fixture build exits 0" (when (not= 0 (.-status res-b)) (str ": " (.-stderr res-b)))))
+      _ (doseq [f out-names]
+          (check (= (sha256-file (.join path out-a f)) (sha256-file (.join path out-b f)))
+                 (str "column order does not change " f)))
+      _ (doseq [f out-names]
+          (check (= (sha256-file (.join path out-a f)) (sha256-file (.join path "data/series" f)))
+                 (str "fixture build matches the committed " f)))
+      ;; Negative control: one expected fuel column removed.
+      oil-idx (.indexOf (clj->js header) "Oil")
+      drop-oil (vec (remove #(= oil-idx %) (range (count header))))
+      root-c (write-fixture "sources-c" (partial permute-columns drop-oil))
+      out-c (.join path workdir "out-c")
+      res-c (run-build root-c out-c)
+      combined (str (.-stdout res-c) (.-stderr res-c))
+      _ (check (not= 0 (.-status res-c)) "missing-column build exits non-zero")
+      _ (check (.includes combined "\"Oil\"") "missing-column build names the missing column")
+      _ (check (not (.existsSync fs (.join path out-c (first out-names))))
+               "missing-column build writes no output")]
+  (println (str "column-order proof holds for " (count out-names) " files in " workdir)))

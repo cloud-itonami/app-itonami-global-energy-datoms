@@ -49,11 +49,11 @@
 
 (def lock (edn/parse-string (slurp* "sources.lock.edn")))
 (def series-pin
-  (let [rows (:sources-unwired lock)]
-    (assert (= 1 (count rows))
-            (str "sources.lock.edn :sources-unwired must pin exactly one series source, found "
-                 (count rows)))
-    (first rows)))
+  (let [row (first (filter #(= :series/worldbank-wdi-2000-2023 (:series/id %))
+                            (:sources-unwired lock)))]
+    (assert row
+            "sources.lock.edn :sources-unwired must pin :series/worldbank-wdi-2000-2023")
+    row))
 
 (def catalog (edn/parse-string (slurp* (path wb-root "raw/source-catalog.edn"))))
 (def series-rows (sort-by :path (:series catalog)))

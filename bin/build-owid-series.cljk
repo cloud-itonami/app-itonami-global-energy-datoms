@@ -1,0 +1,138 @@
+#!/usr/bin/env nbb
+(ns build-owid-series
+  "Project the OWID electricity-by-source history into queryable datoms NEXT
+  TO the existing single-year projection, without changing it.
+
+  usage: nbb bin/build-owid-series.cljk <source-checkouts-root> [<out-dir>]
+
+  Reads .sources/org.ourworldindata/raw/grapher/2026-11-21/electricity-prod-source-stacked.csv
+  and that repository's raw/source-catalog.edn snapshot row (no network), and writes:
+    <out-dir>/owid-electricity-1920-2025.datascript-tx.edn
+    <out-dir>/owid-electricity-1920-2025.kotoba.edn
+    <out-dir>/owid-electricity-1920-2025.quality-report.edn
+  (<out-dir> defaults to data/series.)
+
+  Additive by design: one entity per economy and year, carrying every fuel
+  column with a value for that economy and year, mapped to the SAME
+  attributes bin/build.cljk read-owid uses for the same columns. Identity is
+  :energy.observation/id \"owid-electricity-series-<year>-<code>\" with
+  :energy.observation/source :source/our-world-in-data-series and
+  :energy.observation/release set to the snapshot row's :retrieved-at, so a
+  series observation never shares an identity with the single-year
+  observation for the same year. An empty cell produces no attribute;
+  nothing is filled, interpolated or carried forward. The economy-code
+  filter is the same one read-owid applies: Code must match [A-Z]{3}.
+
+  Columns are read BY NAME: the upstream export swapped the positions of
+  the Oil and Gas columns between the July and November snapshots, so a
+  positional read would silently write wrong data. The build fails loudly,
+  naming the column, when an expected column name is missing."
+  (:require [kotoba.lang.text :as str]
+            [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def source-root (or (first *command-line-args*) ".."))
+(def out-dir (or (second *command-line-args*) "data/series"))
+(defn slurp* [p] (.toString (.readFileSync fs p)))
+(defn write! [p x] (.writeFileSync fs p (str (pr-str x) "\n")))
+(defn path [& xs] (str/join "/" xs))
+(defn valid-iso3? [s] (boolean (re-matches #"[A-Z]{3}" (or s ""))))
+(defn entity-id [source year id] (str source "-" year "-" id))
+(defn fail! [msg] (throw (js/Error. msg)))
+(defn value [s] (when-not (str/blank? s) (js/parseFloat s)))
+
+(def owid-root (path source-root "org.ourworldindata"))
+(def snapshot-path "raw/grapher/2026-11-21/electricity-prod-source-stacked.csv")
+(def series-id :series/owid-electricity-1920-2025)
+(def stem "owid-electricity-1920-2025")
+
+;; Column-to-attribute table: the SAME attributes bin/build.cljk read-owid
+;; uses for the same columns. No attribute names are invented here.
+(def owid-columns
+  {"Other renewables" :energy.electricity/other-renewables-twh
+   "Bioenergy"        :energy.electricity/bioenergy-twh
+   "Solar"            :energy.electricity/solar-twh
+   "Wind"             :energy.electricity/wind-twh
+   "Hydropower"       :energy.electricity/hydropower-twh
+   "Nuclear"          :energy.electricity/nuclear-twh
+   "Oil"              :energy.electricity/oil-twh
+   "Gas"              :energy.electricity/gas-twh
+   "Coal"             :energy.electricity/coal-twh})
+
+(def lock (edn/parse-string (slurp* "sources.lock.edn")))
+(def series-pin
+  (let [row (first (filter #(= series-id (:series/id %)) (:sources-unwired lock)))]
+    (when (nil? row)
+      (fail! (str "sources.lock.edn :sources-unwired must pin " series-id)))
+    row))
+
+(def catalog (edn/parse-string (slurp* (path owid-root "raw/source-catalog.edn"))))
+(def snapshot-row
+  (first (filter #(= snapshot-path (:path %)) (:sources catalog))))
+(when (nil? snapshot-row)
+  (fail! (str "source catalog has no row for " snapshot-path)))
+(def release (:retrieved-at snapshot-row))
+(when (not (string? release))
+  (fail! (str "source catalog row for " snapshot-path " has no :retrieved-at release")))
+(def tx (js/parseInt (str/join "" (str/split (subs release 0 10) #"-" -1))))
+
+(let [lines (str/split-lines (slurp* (path owid-root snapshot-path)))
+      _ (when (empty? lines) (fail! (str "series input is empty: " snapshot-path)))
+      header (str/split (first lines) #"," -1)
+      idx (zipmap header (range))
+      _ (doseq [col (concat ["Entity" "Code" "Year"] (keys owid-columns))]
+          (when-not (contains? idx col)
+            (fail! (str "owid series input is missing expected column " (pr-str col)
+                        " in " snapshot-path "; refusing to write wrong data"))))
+      seen (atom #{})
+      merged (reduce (fn [acc line]
+                       (let [cols (str/split line #"," -1)
+                             iso (get cols (idx "Code"))
+                             year (js/parseInt (get cols (idx "Year")))]
+                         (if (valid-iso3? iso)
+                           (do (when (js/isNaN year)
+                                 (fail! (str "owid series input has a non-numeric Year for " iso)))
+                               (swap! seen conj [iso year])
+                               (let [metrics (into {} (keep (fn [[col attr]]
+                                                              (when-let [v (value (get cols (idx col)))]
+                                                                [attr v])))
+                                                    owid-columns)]
+                                 (if (seq metrics)
+                                   (assoc acc [iso year]
+                                          (merge {:energy.observation/id (entity-id "owid-electricity-series" year iso)
+                                                  :energy.observation/source :source/our-world-in-data-series
+                                                  :energy.observation/release release
+                                                  :country/iso3 iso
+                                                  :country/name (get cols (idx "Entity"))
+                                                  :energy/year year}
+                                                 metrics))
+                                   acc)))
+                           acc)))
+                     {} (rest lines))
+      entities (mapv #(into (sorted-map) %) (sort-by :energy.observation/id (vals merged)))
+      years (vec (sort (distinct (map :energy/year entities))))
+      _ (when (not= years (vec (range 1920 2026)))
+          (fail! (str "owid series entity years are not the 1920-2025 range the files are named for: "
+                      (pr-str [(first years) (last years) (count years)]))))
+      with-values (set (keys merged))
+      datoms (vec (mapcat (fn [e] (for [[a v] (sort-by (comp str key) e)]
+                                    [(:energy.observation/id e) a v tx :add]))
+                          entities))
+      attr-counts (into (sorted-map)
+                        (for [[_ attr] (sort-by key owid-columns)]
+                          [attr (count (filter #(contains? % attr) entities))]))]
+  (.mkdirSync fs out-dir #js {:recursive true})
+  (write! (path out-dir (str stem ".datascript-tx.edn")) entities)
+  (write! (path out-dir (str stem ".kotoba.edn"))
+          {:datom/format :eavt :datom/tx tx :datom/rows datoms})
+  (write! (path out-dir (str stem ".quality-report.edn"))
+          {:series/repository (:repository series-pin)
+           :series/revision (:revision series-pin)
+           :series/release release
+           :series/entities (count entities)
+           :series/economies (count (distinct (map :country/iso3 entities)))
+           :series/years years
+           :series/attributes attr-counts
+           :series/empty-economy-years (count (remove with-values @seen))})
+  (println (str "built " (count entities) " OWID series observations; "
+                (count (remove with-values @seen)) " economy-years with no value at all")))

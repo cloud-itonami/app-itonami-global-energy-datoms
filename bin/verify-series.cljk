@@ -1,15 +1,16 @@
 #!/usr/bin/env nbb
 (ns verify-series
-  "Verify the additive World Bank 2000-2023 series projection.
+  "Verify the additive World Bank 2000-2023 and OWID electricity 1920-2025
+  series projections.
 
   usage: nbb bin/verify-series.cljk <source-checkouts-root>
 
-  Reads files only. It recomputes the three data/series/ outputs in memory
-  from the pinned input and fails when a committed file differs; fails when
-  the source checkout is not at the pinned revision; verifies input file
-  integrity against the source catalog; and checks, for three fixed
-  economy-years named below, that the projected values equal the raw
-  `value` fields."
+  Reads files only. For each series it recomputes the three data/series/
+  outputs in memory from the pinned input and fails when a committed file
+  differs; fails when the source checkout is not at the pinned revision;
+  verifies input file integrity against the source catalog; and checks, for
+  three fixed economy-years named below, that the projected values equal
+  the raw fields."
   (:require [kotoba.lang.text :as str]
             [edamame.core :as edn]))
 
@@ -40,11 +41,11 @@
 
 (def lock (edn/parse-string (slurp* "sources.lock.edn")))
 (def series-pin
-  (let [rows (:sources-unwired lock)]
-    (when (not= 1 (count rows))
-      (fail! (str "sources.lock.edn :sources-unwired must pin exactly one series source, found "
-                  (count rows))))
-    (first rows)))
+  (let [row (first (filter #(= :series/worldbank-wdi-2000-2023 (:series/id %))
+                            (:sources-unwired lock)))]
+    (when (nil? row)
+      (fail! "sources.lock.edn :sources-unwired must pin :series/worldbank-wdi-2000-2023"))
+    row))
 (def pinned-revision (:revision series-pin))
 (def repo-dir
   (let [repo (:repository series-pin)
@@ -174,3 +175,186 @@
               (count datoms) " datoms, "
               (count spot-checks) " spot-checked economy-years "
               (pr-str spot-checks)))
+
+;; ---- OWID electricity 1920-2025 series (AWAI-3657) ----
+;; Same column-to-attribute table bin/build.cljk read-owid uses. Columns
+;; are read BY NAME: the upstream export swapped the positions of the Oil
+;; and Gas columns between the July and November snapshots.
+
+(def owid-columns
+  {"Other renewables" :energy.electricity/other-renewables-twh
+   "Bioenergy"        :energy.electricity/bioenergy-twh
+   "Solar"            :energy.electricity/solar-twh
+   "Wind"             :energy.electricity/wind-twh
+   "Hydropower"       :energy.electricity/hydropower-twh
+   "Nuclear"          :energy.electricity/nuclear-twh
+   "Oil"              :energy.electricity/oil-twh
+   "Gas"              :energy.electricity/gas-twh
+   "Coal"             :energy.electricity/coal-twh})
+
+(def owid-snapshot-path "raw/grapher/2026-11-21/electricity-prod-source-stacked.csv")
+(def owid-stem "owid-electricity-1920-2025")
+(def owid-series-id :series/owid-electricity-1920-2025)
+
+;; Fixed economy-years whose projected values are checked against the raw
+;; CSV cells. Each has a non-blank cell for all nine fuel columns.
+(def owid-spot-checks [["JPN" 2024] ["USA" 2000] ["CHN" 2010]])
+
+(def owid-pin
+  (let [row (first (filter #(= owid-series-id (:series/id %)) (:sources-unwired lock)))]
+    (when (nil? row)
+      (fail! (str "sources.lock.edn :sources-unwired must pin " owid-series-id)))
+    row))
+(def owid-pinned-revision (:revision owid-pin))
+(def owid-repo-dir
+  (let [repo (:repository owid-pin)
+        tail (.pop (.split repo "/"))
+        dir (.replace tail "app-itonami-" "")]
+    (join source-root dir)))
+
+;; 1. The source checkout must be at the pinned revision.
+(def owid-git-dir (join owid-repo-dir ".git"))
+(def owid-head-file (join owid-git-dir "HEAD"))
+(when (not (.existsSync fs owid-head-file))
+  (fail! (str "source checkout has no .git/HEAD to compare with the pinned revision: " owid-repo-dir)))
+(def owid-checked-out-revision
+  (let [head (.trim (slurp* owid-head-file))]
+    (if (.startsWith head "ref:")
+      (let [ref (.trim (subs head 4))
+            ref-file (join owid-git-dir ref)
+            packed (join owid-git-dir "packed-refs")]
+        (cond
+          (.existsSync fs ref-file) (.trim (slurp* ref-file))
+          (.existsSync fs packed)
+          (let [line (first (filter #(.endsWith % (str " " ref))
+                                    (.split (slurp* packed) "\n")))]
+            (if line (first (.split line " "))
+                (fail! (str "cannot resolve " head " in " owid-repo-dir))))
+          :else (fail! (str "cannot resolve " head " in " owid-repo-dir))))
+      head)))
+(when (not= owid-pinned-revision owid-checked-out-revision)
+  (fail! (str "source checkout is at " owid-checked-out-revision
+              " but sources.lock.edn pins " owid-pinned-revision)))
+
+;; 2. Input integrity: the snapshot CSV matches the catalog sha256, and the
+;; release is the snapshot row's :retrieved-at.
+(def owid-catalog (edn/parse-string (slurp* (join owid-repo-dir "raw/source-catalog.edn"))))
+(def owid-snapshot-row
+  (first (filter #(= owid-snapshot-path (:path %)) (:sources owid-catalog))))
+(when (nil? owid-snapshot-row)
+  (fail! (str "source catalog has no row for " owid-snapshot-path)))
+(def owid-expected-sha (:csv-sha256 owid-snapshot-row))
+(when (not (string? owid-expected-sha))
+  (fail! (str "source catalog row for " owid-snapshot-path " has no :csv-sha256")))
+(def owid-actual-sha (.digest (.update (.createHash crypto "sha256") (.readFileSync fs (join owid-repo-dir owid-snapshot-path))) "hex"))
+(when (not= owid-expected-sha owid-actual-sha)
+  (fail! (str "sha256 mismatch for series input " owid-snapshot-path)))
+(def owid-release (:retrieved-at owid-snapshot-row))
+(when (not (string? owid-release))
+  (fail! (str "source catalog row for " owid-snapshot-path " has no :retrieved-at release")))
+(def owid-tx (js/parseInt (str/join "" (str/split (subs owid-release 0 10) #"-" -1))))
+
+;; 3. Recompute the projection in memory (same name-based column logic as
+;; bin/build-owid-series.cljk).
+(def owid-lines (str/split-lines (slurp* (join owid-repo-dir owid-snapshot-path))))
+(when (empty? owid-lines) (fail! (str "series input is empty: " owid-snapshot-path)))
+(def owid-header (str/split (first owid-lines) #"," -1))
+(def owid-idx (zipmap owid-header (range)))
+(doseq [col (concat ["Entity" "Code" "Year"] (keys owid-columns))]
+  (when-not (contains? owid-idx col)
+    (fail! (str "owid series input is missing expected column " (pr-str col)
+                " in " owid-snapshot-path "; refusing to verify wrong data"))))
+(def owid-seen (atom #{}))
+(def owid-merged
+  (reduce (fn [acc line]
+            (let [cols (str/split line #"," -1)
+                  iso (get cols (owid-idx "Code"))
+                  year (js/parseInt (get cols (owid-idx "Year")))]
+              (if (valid-iso3? iso)
+                (do (when (js/isNaN year)
+                      (fail! (str "owid series input has a non-numeric Year for " iso)))
+                    (swap! owid-seen conj [iso year])
+                    (let [metrics (into {} (keep (fn [[col attr]]
+                                                   (let [s (get cols (owid-idx col))]
+                                                     (when-not (str/blank? s)
+                                                       [attr (js/parseFloat s)])))
+                                                 owid-columns))]
+                      (if (seq metrics)
+                        (assoc acc [iso year]
+                               (merge {:energy.observation/id (entity-id "owid-electricity-series" year iso)
+                                       :energy.observation/source :source/our-world-in-data-series
+                                       :energy.observation/release owid-release
+                                       :country/iso3 iso
+                                       :country/name (get cols (owid-idx "Entity"))
+                                       :energy/year year}
+                                      metrics))
+                        acc)))
+                acc)))
+          {} (rest owid-lines)))
+(def owid-entities (mapv #(into (sorted-map) %) (sort-by :energy.observation/id (vals owid-merged))))
+(def owid-years (vec (sort (distinct (map :energy/year owid-entities)))))
+(when (not= owid-years (vec (range 1920 2026)))
+  (fail! (str "owid series entity years are not the 1920-2025 range the files are named for: "
+              (pr-str [(first owid-years) (last owid-years) (count owid-years)]))))
+(def owid-with-values (set (keys owid-merged)))
+(def owid-datoms
+  (vec (mapcat (fn [e] (for [[a v] (sort-by (comp str key) e)]
+                         [(:energy.observation/id e) a v owid-tx :add]))
+               owid-entities)))
+(def owid-expected-tx (str "data/series/" owid-stem ".datascript-tx.edn"))
+(def owid-expected-kotoba (str "data/series/" owid-stem ".kotoba.edn"))
+(def owid-expected-quality (str "data/series/" owid-stem ".quality-report.edn"))
+(def owid-recomputed
+  [[owid-expected-tx owid-entities]
+   [owid-expected-kotoba {:datom/format :eavt :datom/tx owid-tx :datom/rows owid-datoms}]
+   [owid-expected-quality
+    {:series/repository (:repository owid-pin)
+     :series/revision (:revision owid-pin)
+     :series/release owid-release
+     :series/entities (count owid-entities)
+     :series/economies (count (distinct (map :country/iso3 owid-entities)))
+     :series/years owid-years
+     :series/attributes (into (sorted-map)
+                              (for [[_ attr] (sort-by key owid-columns)]
+                                [attr (count (filter #(contains? % attr) owid-entities))]))
+     :series/empty-economy-years (count (remove owid-with-values @owid-seen))}]])
+
+;; 4. Committed files must equal the recomputation byte for byte.
+(doseq [[fpath expected] owid-recomputed]
+  (when (not (.existsSync fs fpath))
+    (fail! (str "committed series file is missing: " fpath)))
+  (let [actual (slurp* fpath)
+        want (str (pr-str expected) "\n")]
+    (when (not= want actual)
+      (fail! (str "committed series file differs from the pinned-input recomputation: " fpath)))))
+
+;; 5. Spot checks: projected values equal the raw CSV cells.
+(def owid-by-id (into {} (map (juxt :energy.observation/id identity) owid-entities)))
+(def owid-raw-by-key
+  (into {} (map (fn [line]
+                  (let [cols (str/split line #"," -1)]
+                    [[(get cols (owid-idx "Code")) (js/parseInt (get cols (owid-idx "Year")))] cols]))
+                (rest owid-lines))))
+(doseq [[iso year] owid-spot-checks]
+  (let [eid (entity-id "owid-electricity-series" year iso)
+        entity (get owid-by-id eid)]
+    (when (nil? entity)
+      (fail! (str "spot-check entity is missing from the projection: " eid)))
+    (let [cols (get owid-raw-by-key [iso year])]
+      (when (nil? cols)
+        (fail! (str "spot-check raw row is missing for " eid " in " owid-snapshot-path)))
+      (doseq [[col attr] owid-columns]
+        (let [raw (get cols (owid-idx col))]
+          (if (str/blank? raw)
+            (when (contains? entity attr)
+              (fail! (str "spot-check value should be absent for " eid " " attr)))
+            (when (not= (js/parseFloat raw) (get entity attr))
+              (fail! (str "spot-check value differs for " eid " " attr
+                          ": projected " (pr-str (get entity attr))
+                          ", raw " (pr-str raw))))))))))
+
+(println (str "verified owid series projection at " owid-pinned-revision ": "
+              (count owid-entities) " entities, "
+              (count owid-datoms) " datoms, "
+              (count owid-spot-checks) " spot-checked economy-years "
+              (pr-str owid-spot-checks)))

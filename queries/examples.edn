@@ -14,6 +14,14 @@
                   [?e :country/iso3 "JPN"]
                   [?e :energy/year ?year]
                   [?e :energy.electricity/renewable-share-percent ?share]]}
+  :owid-electricity-series-solar-jpn-1920-2025
+  {:args []
+   :query [:find ?year ?twh
+           :in $
+           :where [?e :energy.observation/source :source/our-world-in-data-series]
+                  [?e :country/iso3 "JPN"]
+                  [?e :energy/year ?year]
+                  [?e :energy.electricity/solar-twh ?twh]]}
   :solar-generation-2024
   {:args []
    :query [:find ?country ?twh

@@ -27,4 +27,5 @@
  ;; contract.yml and move this row to :sources. bin/verify-series.cljk reads
  ;; this key.
  :sources-unwired
- [{:series/id :series/worldbank-wdi-2000-2023 :repository "cloud-itonami/app-itonami-org.worldbank.api" :revision "380b43a0177294dd68ab1abbc97ddaa3890f17f7"}]}
+ [{:series/id :series/worldbank-wdi-2000-2023 :repository "cloud-itonami/app-itonami-org.worldbank.api" :revision "380b43a0177294dd68ab1abbc97ddaa3890f17f7"}
+  {:series/id :series/owid-electricity-1920-2025 :repository "cloud-itonami/app-itonami-org.ourworldindata" :revision "0f13c95e5c7827e08ee7db4629adaa4c5e900fe0"}]}
