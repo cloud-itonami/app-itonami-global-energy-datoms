@@ -1,0 +1,110 @@
+#!/usr/bin/env nbb
+(ns projection-refresh-test
+  "Negative controls for the single-year 2026-11-21 snapshot refresh.
+
+  usage: nbb test/projection_refresh.cljk
+
+  Runs from the repository root with the pinned source checkouts in
+  place (bin/verify-projection.cljk .sources must pass first) and
+  proves the failure modes the refresh relies on:
+
+  (a) one value changed in the committed data/datascript-tx.edn makes
+      bin/verify-projection.cljk exit non-zero naming the file;
+  (b) a source checkout at another revision makes it exit non-zero
+      naming the pinned revision;
+  (c) the OWID November CSV with one expected fuel column renamed makes
+      bin/build.cljk exit non-zero naming the missing column, writing
+      nothing.
+
+  (a) rewrites data/datascript-tx.edn transiently and restores the exact
+  original bytes in a finally block; the test fails loudly if the
+  restore does not match. Everything else is scratch under os.tmpdir."
+  (:require [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def os (js/require "os"))
+(def child (js/require "child_process"))
+
+(assert (.existsSync fs "sources.lock.edn")
+        "run this test from the repository root")
+(assert (.existsSync fs "bin/build.cljk")
+        "missing bin/build.cljk")
+(assert (.existsSync fs "bin/verify-projection.cljk")
+        "missing bin/verify-projection.cljk")
+(assert (.existsSync fs ".sources/org.ourworldindata/raw/grapher/2026-11-21/electricity-prod-source-stacked.csv")
+        "pinned OWID input is missing (fetch the revisions in sources.lock.edn :sources-2026-11-21 first)")
+
+(defn check [cond* message]
+  (assert cond* (str "FAIL: " message))
+  (println (str "ok: " message)))
+
+(defn run-nbb [args opts]
+  (.spawnSync child "nbb" (clj->js args)
+              (clj->js (merge {:encoding "utf8" :timeout 300000} opts))))
+
+;; Positive gate: the committed projection verifies before the controls.
+(let [res (run-nbb ["bin/verify-projection.cljk" ".sources"] {})]
+  (check (= 0 (.-status res))
+         "verify-projection passes on the committed files before the controls"))
+
+;; (a) One changed value in the committed transaction file.
+(let [fpath "data/datascript-tx.edn"
+      original (.toString (.readFileSync fs fpath))
+      pick (first (filter #(= 1 (count (re-seq (js/RegExp. % "g") original)))
+                          (.match original (js/RegExp. "\\d+\\.\\d{10,}" "g"))))]
+  (check (some? pick) "found a unique long float to perturb in data/datascript-tx.edn")
+  (let [perturbed (.replace original pick (str (.slice pick 0 -1)
+                                               (if (= "0" (.slice pick -1)) "1" "0")))]
+    (check (not= original perturbed) "perturbation changes the file bytes")
+    (.writeFileSync fs fpath perturbed)
+    (try
+      (let [res (run-nbb ["bin/verify-projection.cljk" ".sources"] {})
+            combined (str (.-stdout res) (.-stderr res))]
+        (check (not= 0 (.-status res)) "changed-value verification exits non-zero")
+        (check (.includes combined "committed file differs from the pinned-input recomputation: data/datascript-tx.edn")
+               "changed-value failure names data/datascript-tx.edn"))
+      (finally
+        (.writeFileSync fs fpath original)
+        (check (= original (.toString (.readFileSync fs fpath)))
+               "data/datascript-tx.edn restored byte for byte after control (a)")))))
+
+;; (b) A source checkout at another revision.
+(let [root (.mkdtempSync fs (.join path (.tmpdir os) "projection-wrong-rev-"))
+      dirs ["org.worldbank.api" "org.ourworldindata" "jp.go.meti.enecho" "org.un.unstats"]]
+  (doseq [d dirs]
+    (let [dir (.join path root d)]
+      (.mkdirSync fs dir #js {:recursive true})
+      (check (= 0 (.-status (.spawnSync child "git" (clj->js ["init" "-q" dir]) #js {:encoding "utf8"})))
+             (str "git init " d))
+      (check (= 0 (.-status (.spawnSync child "git" (clj->js ["-C" dir "-c" "user.name=t" "-c" "user.email=t@t.t" "commit" "-q" "--allow-empty" "-m" "wrong"]) #js {:encoding "utf8"})))
+             (str "git commit " d))))
+  (let [res (run-nbb ["bin/verify-projection.cljk" root] {})
+        combined (str (.-stdout res) (.-stderr res))]
+    (check (not= 0 (.-status res)) "wrong-revision verification exits non-zero")
+    (check (.includes combined "but sources.lock.edn pins")
+           "wrong-revision failure names the pinned revision")))
+
+;; (c) The OWID CSV with one expected fuel column renamed.
+(let [workdir (.mkdtempSync fs (.join path (.tmpdir os) "projection-rename-col-"))
+      root (.join path workdir "sources")
+      owid-dir (.join path root "org.ourworldindata" "raw" "grapher" "2026-11-21")]
+  (.mkdirSync fs owid-dir #js {:recursive true})
+  (.mkdirSync fs (.join path root "org.ourworldindata" "raw") #js {:recursive true})
+  (doseq [d ["org.worldbank.api" "org.un.unstats" "jp.go.meti.enecho"]]
+    (.symlinkSync fs (.resolve path ".sources" d) (.join path root d)))
+  (.copyFileSync fs (.join path ".sources" "org.ourworldindata" "raw" "grapher" "2026-11-21" "electricity-prod-source-stacked.csv")
+                  (.join path owid-dir "electricity-prod-source-stacked.csv"))
+  (.copyFileSync fs (.join path ".sources" "org.ourworldindata" "raw" "source-catalog.edn")
+                  (.join path root "org.ourworldindata" "raw" "source-catalog.edn"))
+  (let [csv-path (.join path owid-dir "electricity-prod-source-stacked.csv")
+        header (first (.split (.toString (.readFileSync fs csv-path)) "\n"))]
+    (check (.includes header ",Oil,") "fixture setup: real November CSV carries an Oil column")
+    (.writeFileSync fs csv-path (.replace (.toString (.readFileSync fs csv-path)) ",Oil," ",Oill,")))
+  (let [res (run-nbb [(.resolve path "bin/build.cljk") root] {:cwd workdir})
+        combined (str (.-stdout res) (.-stderr res))]
+    (check (not= 0 (.-status res)) "renamed-column build exits non-zero")
+    (check (.includes combined "\"Oil\"") "renamed-column build names the missing column")
+    (check (not (.existsSync fs (.join path workdir "data")))
+           "renamed-column build writes nothing")))
+(println "negative controls hold")
