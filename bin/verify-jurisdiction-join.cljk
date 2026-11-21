@@ -1,0 +1,91 @@
+#!/usr/bin/env kbb
+(ns verify-jurisdiction-join
+  "Recompute the join declared in coverage/registry.edn :coverage/external-joins
+  from the two committed projections, and fail when the registered numbers are
+  stale.
+
+  usage: nbb bin/verify-jurisdiction-join.cljk <checkout of the legislation repository>
+
+  Reads files only. It does not fetch, and it does not write: a join that
+  drifted is a reviewed edit to coverage/registry.edn, not something this
+  script repairs."
+  (:require [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def crypto (js/require "crypto"))
+
+(defn slurp* [p] (.toString (.readFileSync fs p)))
+(defn sha256 [p] (-> (.createHash crypto "sha256") (.update (.readFileSync fs p)) (.digest "hex")))
+
+(defn head-revision
+  "The commit a checkout is at, read from .git without running git. nil when
+  it cannot be read -- an unknown revision is reported as unknown, never
+  assumed to be the locked one."
+  [root]
+  (let [head-file (.join path root ".git" "HEAD")]
+    (when (.existsSync fs head-file)
+      (let [head (.trim (slurp* head-file))]
+        (if-let [[_ ref] (re-matches #"ref: (.+)" head)]
+          (let [ref-file (.join path root ".git" ref)]
+            (when (.existsSync fs ref-file) (.trim (slurp* ref-file))))
+          head)))))
+
+(def remote-root
+  (or (first *command-line-args*)
+      (throw (ex-info "usage: verify-jurisdiction-join.cljk <legislation checkout>" {}))))
+
+(let [registry (edn/parse-string (slurp* "coverage/registry.edn"))
+      lock     (edn/parse-string (slurp* "sources.lock.edn"))
+      join     (first (filter #(= :join/legislation-jurisdictions (:join/id %))
+                              (:coverage/external-joins registry)))
+      locked   (first (filter #(= (:join/id join) (:join/id %)) (:joins lock)))
+      _        (assert join "coverage/registry.edn declares no :join/legislation-jurisdictions")
+      _        (assert locked "sources.lock.edn pins no revision for :join/legislation-jurisdictions")
+      _        (assert (= (:join/repository join) (:repository locked))
+                       "registry and lock name different repositories for the join")
+      revision (head-revision remote-root)
+      _        (assert (or (nil? revision) (= revision (:revision locked)))
+                       (str "legislation checkout is at " revision
+                            ", the lock pins " (:revision locked)))
+      local-file  "data/datascript-tx.edn"
+      remote-file (.join path remote-root (:join/file join))
+      local-key   (:join/local-key join)
+      remote-key  (:join/remote-key join)
+      [filter-key filter-value] (first (:join/remote-filter join))
+      local       (edn/parse-string (slurp* local-file))
+      remote      (edn/parse-string (slurp* remote-file))
+      local-codes (set (keep local-key local))
+      jurisdictions (filter #(contains? % remote-key) remote)
+      national    (set (map remote-key (filter #(= filter-value (get % filter-key)) jurisdictions)))
+      other       (set (map remote-key (remove #(= filter-value (get % filter-key)) jurisdictions)))
+      measured {:remote-jurisdictions (count jurisdictions)
+                :remote-national (count national)
+                :matched (count (filter local-codes national))
+                :remote-national-unmatched (vec (sort (remove local-codes national)))
+                :remote-not-national (vec (sort other))
+                :local-distinct (count local-codes)
+                :local-unmatched (count (remove national local-codes))}]
+  ;; Evidence floors. Every count below is a filter over a collection, and an
+  ;; empty collection satisfies "nothing is unmatched" while joining nothing.
+  (assert (pos? (count local-codes)) (str "no " local-key " values in " local-file))
+  (assert (pos? (count national)) (str "no national " remote-key " values in " remote-file))
+  (assert (= (count jurisdictions) (count (set (map remote-key jurisdictions))))
+          (str remote-key " is not unique in " remote-file))
+  ;; A not-national code that also appears locally would be joined by a
+  ;; consumer that forgot the filter. Today there is none; say so if one appears.
+  (assert (empty? (filter local-codes other))
+          (str "not-national codes also present as " local-key ": "
+               (pr-str (vec (sort (filter local-codes other))))))
+  (assert (= (:join/measured join) measured)
+          (str "coverage/registry.edn :join/measured is stale.\n registered: "
+               (pr-str (:join/measured join)) "\n measured:   " (pr-str measured)))
+  (println (pr-str {:status :ok
+                    :join (:join/id join)
+                    :local {:file local-file :sha256 (sha256 local-file)}
+                    :remote {:repository (:join/repository join)
+                             :file (:join/file join)
+                             :sha256 (sha256 remote-file)
+                             :revision (or revision :unknown)
+                             :locked-revision (:revision locked)}
+                    :measured measured})))

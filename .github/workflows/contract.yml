@@ -34,6 +34,11 @@ jobs:
           repository: etzhayyim/org.un.unstats
           ref: 0bfe52c5e3296953d532327e163183cab7485f5e
           path: .sources/org.un.unstats
+      - uses: actions/checkout@v4
+        with:
+          repository: kotoba-lang/app-itonami-global-legislation-datoms
+          ref: f3fc1e3132b4ae4e0863576b42aed6e34afde562
+          path: .joins/app-itonami-global-legislation-datoms
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -56,5 +61,7 @@ jobs:
         run: npx nbb bin/build-quality-report.cljk
       - name: Reject stale generated datoms
         run: git diff --exit-code -- data
+      - name: Verify the jurisdiction join against the legislation projection
+        run: npx nbb bin/verify-jurisdiction-join.cljk .joins/app-itonami-global-legislation-datoms
       - name: Exercise Datascript query contract
         run: clojure -M test/query_contract.cljk

@@ -4,4 +4,8 @@
  [{:source/id :source/jp-go-meti-enecho :repository "etzhayyim/jp.go.meti.enecho" :revision "cc2d7e4f5400a1d6c06b6d8fa60345e37d8473b2"}
   {:source/id :source/worldbank-wdi :repository "etzhayyim/org.worldbank.api" :revision "0869056d9baa7858c1da25e4e22324b7147cab05"}
   {:source/id :source/our-world-in-data :repository "etzhayyim/org.ourworldindata" :revision "c63c1aeaf654f125191b3ba25c01c4b78851dcef"}
-  {:source/id :source/un-sdg :repository "etzhayyim/org.un.unstats" :revision "0bfe52c5e3296953d532327e163183cab7485f5e"}]}
+  {:source/id :source/un-sdg :repository "etzhayyim/org.un.unstats" :revision "0bfe52c5e3296953d532327e163183cab7485f5e"}]
+ ;; Not sources of this dataset. Repositories that coverage/registry.edn
+ ;; :coverage/external-joins is verified against, pinned the same way.
+ :joins
+ [{:join/id :join/legislation-jurisdictions :repository "kotoba-lang/app-itonami-global-legislation-datoms" :revision "f3fc1e3132b4ae4e0863576b42aed6e34afde562"}]}
