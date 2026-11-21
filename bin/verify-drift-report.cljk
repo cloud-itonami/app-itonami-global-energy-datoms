@@ -1,0 +1,108 @@
+#!/usr/bin/env nbb
+(ns verify-drift-report
+  "Check the dated upstream-drift report against the source checkouts.
+
+  usage: nbb bin/verify-drift-report.cljk [.sources [report.md report.edn]]
+
+  Reads files only. It makes no network request. It checks that the .edn
+  report is well formed, that every row's pinned sha256 equals the one in
+  the corresponding source catalog under .sources/, that every status is one
+  the drift script can produce, and that the .md and .edn list the same
+  URLs. Defaults cover docs/upstream-drift/2026-11-21.md and .edn."
+  (:require [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+
+(def root (or (nth *command-line-args* 0 nil) ".sources"))
+(def md-path (or (nth *command-line-args* 1 nil) "docs/upstream-drift/2026-11-21.md"))
+(def edn-path (or (nth *command-line-args* 2 nil) "docs/upstream-drift/2026-11-21.edn"))
+
+(def catalogs ["jp.go.meti.enecho/raw/source-catalog.edn"
+               "org.ourworldindata/raw/source-catalog.edn"
+               "org.un.unstats/raw/source-catalog.edn"])
+
+;; Exactly the statuses bin/report-upstream-drift.cljk can produce.
+(def known-statuses #{:unchanged :changed :unavailable :not-configured})
+
+(defn slurp* [p]
+  (assert (.existsSync fs p) (str "report file is missing: " p))
+  (.toString (.readFileSync fs p)))
+
+(defn source-url [s] (or (:url s) (:source/url s)))
+(defn expected-sha [s] (or (:sha256 s) (:source/sha256 s) (:csv-sha256 s)))
+(defn hex64? [x] (and (string? x) (boolean (re-matches #"^[0-9a-f]{64}$" x))))
+(defn instant? [x]
+  (and (string? x) (not (js/Number.isNaN (js/Date.parse x)))))
+
+(defn check-row-shape [i row]
+  (assert (map? row) (str "edn row " i " is not a map: " (pr-str row)))
+  (let [status (:status row)]
+    (assert (contains? known-statuses status)
+            (str "edn row " i " has an unknown status: " (pr-str status)))
+    (assert (instant? (:requested-at-utc row))
+            (str "edn row " i " has a bad :requested-at-utc: " (pr-str (:requested-at-utc row))))
+    (cond
+      (or (= status :unchanged) (= status :changed))
+      (do (assert (string? (:url row))
+                  (str "edn row " i " is " status " but has no :url"))
+          (assert (hex64? (:pinned-sha256 row))
+                  (str "edn row " i " has a bad :pinned-sha256: " (pr-str (:pinned-sha256 row))))
+          (assert (hex64? (:observed-sha256 row))
+                  (str "edn row " i " has a bad :observed-sha256: " (pr-str (:observed-sha256 row))))
+          (assert (and (integer? (:bytes row)) (<= 0 (:bytes row)))
+                  (str "edn row " i " has a bad :bytes: " (pr-str (:bytes row)))))
+
+      (= status :unavailable)
+      (do (assert (string? (:url row))
+                  (str "edn row " i " is :unavailable but has no :url"))
+          (assert (hex64? (:pinned-sha256 row))
+                  (str "edn row " i " has a bad :pinned-sha256: " (pr-str (:pinned-sha256 row))))
+          (assert (and (string? (:failure-detail row)) (pos? (count (:failure-detail row))))
+                  (str "edn row " i " is :unavailable but has no :failure-detail"))
+          (assert (not (contains? row :observed-sha256))
+                  (str "edn row " i " is :unavailable but carries an :observed-sha256")))
+
+      (= status :not-configured)
+      (assert (string? (:label row))
+              (str "edn row " i " is :not-configured but has no :label")))))
+
+(defn md-urls [text]
+  (->> (.split text "\n")
+       (filter #(.startsWith % "| "))
+       (map #(.split % "|"))
+       (filter #(= 5 (.-length %)))
+       (map #(-> (aget % 2) (.trim)))
+       (remove #(or (= % "status") (.startsWith % "---")))
+       (filter #(.includes % "://"))
+       (set)))
+
+(let [report (edn/parse-string (slurp* edn-path))
+      _ (assert (map? report) (str edn-path " is not an EDN map"))
+      rows (:report/rows report)
+      _ (assert (and (sequential? rows) (pos? (count rows)))
+                (str edn-path " declares no :report/rows"))
+      _ (doseq [[i row] (map-indexed vector rows)] (check-row-shape i row))
+      expected (mapcat (fn [catalog-path]
+                         (:sources (edn/parse-string (slurp* (str root "/" catalog-path)))))
+                       catalogs)
+      _ (assert (= (count rows) (count expected))
+               (str edn-path " lists " (count rows) " rows but the catalogs hold "
+                    (count expected) " sources"))
+      _ (doseq [[i row s] (map vector (range) rows expected)]
+          (assert (= (:url row) (source-url s))
+                  (str "edn row " i " is for " (pr-str (:url row))
+                       " but catalog entry " i " is " (pr-str (source-url s))))
+          (assert (= (:pinned-sha256 row) (expected-sha s))
+                  (str "edn row " i " pins " (pr-str (:pinned-sha256 row))
+                       " but the catalog has " (pr-str (expected-sha s)))))
+      urls-edn (set (keep :url rows))
+      urls-md (md-urls (slurp* md-path))
+      _ (doseq [u urls-edn]
+          (assert (contains? urls-md u)
+                  (str md-path " lists no row for " u)))
+      _ (doseq [u urls-md]
+          (assert (contains? urls-edn u)
+                  (str edn-path " lists no row for " u)))]
+  (println (str "verified " (count rows) " drift rows against " (count catalogs)
+                " catalogs; " (count urls-edn) " urls agree between "
+                md-path " and " edn-path)))

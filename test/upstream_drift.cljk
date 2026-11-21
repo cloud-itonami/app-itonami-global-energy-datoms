@@ -1,0 +1,165 @@
+#!/usr/bin/env nbb
+(ns upstream-drift-test
+  "Offline test for bin/report-upstream-drift.cljk (EDN rows, retry, redirect
+  guard) and bin/verify-drift-report.cljk (including the two negative
+  controls the AWAI-3639 issue names).
+
+  usage: nbb test/upstream_drift.cljk
+
+  Reads and writes files only, except for two loopback node servers used to
+  prove the redirect guard. It makes no request beyond 127.0.0.1 and touches
+  no catalogued URL."
+  (:require [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def os (js/require "os"))
+(def crypto (js/require "crypto"))
+(def child (js/require "child_process"))
+
+(def root (.-cwd js/process))
+(def drift-bin "bin/report-upstream-drift.cljk")
+(def verify-bin "bin/verify-drift-report.cljk")
+
+(assert (.existsSync fs "sources.lock.edn")
+        "run this test from the repository root")
+(assert (.existsSync fs drift-bin) (str "missing " drift-bin))
+(assert (.existsSync fs verify-bin) (str "missing " verify-bin))
+
+(def workdir (.mkdtempSync fs (.join path (.tmpdir os) "drift-test-")))
+(def fixture (.join path workdir "sources"))
+
+(defn write-file [p content] (.writeFileSync fs p content))
+(defn sha256-hex [s]
+  (-> (.createHash crypto "sha256") (.update (js/Buffer.from s)) (.digest "hex")))
+(defn run-nbb [args env-extra]
+  (.spawnSync child "nbb" (clj->js args)
+              #js {:encoding "utf8"
+                   :env (js/Object.assign #js {} js/process.env (clj->js env-extra))}))
+(defn check [cond* message]
+  (assert cond* (str "FAIL: " message))
+  (println (str "ok: " message)))
+
+(let [payload "hello upstream evidence"
+      payload-file (.join path workdir "payload.bin")
+      _ (write-file payload-file payload)
+      pinned (sha256-hex payload)
+      _ (.mkdirSync fs (.join path fixture "jp.go.meti.enecho" "raw") #js {:recursive true})
+      _ (.mkdirSync fs (.join path fixture "org.ourworldindata" "raw") #js {:recursive true})
+      _ (.mkdirSync fs (.join path fixture "org.un.unstats" "raw") #js {:recursive true})
+      _ (write-file (.join path fixture "jp.go.meti.enecho" "raw" "source-catalog.edn")
+                    (pr-str {:sources [{:source/id :t/ok
+                                        :source/url (str "file://" payload-file)
+                                        :source/sha256 pinned}
+                                       {:source/id :t/changed
+                                        :source/url (str "file://" payload-file)
+                                        :source/sha256 (apply str (repeat 64 "0"))}]}))
+      _ (write-file (.join path fixture "org.ourworldindata" "raw" "source-catalog.edn")
+                    (pr-str {:sources [{:source/id :t/missing
+                                        :source/url (str "file://" workdir "/absent.bin")
+                                        :source/sha256 pinned}]}))
+      _ (write-file (.join path fixture "org.un.unstats" "raw" "source-catalog.edn")
+                    (pr-str {:sources [{:source/id :t/unconfigured}]}))
+      md-file (.join path workdir "report.md")
+      edn-file (.join path workdir "report.edn")
+      res (run-nbb [drift-bin fixture]
+                   {"DRIFT_EDN_OUT" edn-file "DRIFT_RETRY_DELAY_S" "0"})
+      _ (check (= 0 (.-status res))
+               (str "drift script exits 0 (" (.-status res) "): " (.-stderr res)))
+      _ (write-file md-file (.-stdout res))
+      stdout (.-stdout res)
+      _ (check (and (.includes stdout "| unchanged | file://")
+                    (.includes stdout "| changed | file://")
+                    (.includes stdout "| unavailable | file://")
+                    (.includes stdout "| not-configured |"))
+               "stdout table keeps the historical shape with all four statuses")
+      report (edn/parse-string (.toString (.readFileSync fs edn-file)))
+      rows (:report/rows report)
+      _ (check (= 4 (count rows)) "edn carries one row per catalogued entry")
+      [ok changed missing unconfigured] rows
+      _ (check (and (= :unchanged (:status ok))
+                    (= pinned (:observed-sha256 ok))
+                    (= (.-length (js/Buffer.from payload)) (:bytes ok))
+                    (not (js/Number.isNaN (js/Date.parse (:requested-at-utc ok)))))
+               "unchanged row carries observed sha, bytes and request time")
+      _ (check (and (= :changed (:status changed))
+                    (= pinned (:observed-sha256 changed)))
+               "changed row carries the observed sha")
+      _ (check (and (= :unavailable (:status missing))
+                    (string? (:failure-detail missing))
+                    (not (contains? missing :observed-sha256)))
+               "unavailable row carries the failure detail and no observed sha")
+      _ (check (= :not-configured (:status unconfigured))
+               "entry without url and sha is not-configured")
+      _ (check (= (sha256-hex (.readFileSync fs drift-bin)) (:report/script-sha256 report))
+               "edn records the drift script sha256")
+      _ (check (= 4 (count (:report/locked-sources report)))
+               "edn records the four locked source revisions")
+      good (run-nbb [verify-bin fixture md-file edn-file] {})
+      _ (check (= 0 (.-status good))
+               (str "verifier exits 0 on the good report: " (.-stderr good)))
+      ;; Negative control (a): one pinned sha256 in the .edn altered.
+      tampered-edn (.join path workdir "tampered.edn")
+      _ (write-file tampered-edn
+                    (pr-str (assoc report :report/rows
+                                   (assoc-in (:report/rows report) [0 :pinned-sha256]
+                                             (apply str (repeat 64 "1"))))))
+      bad-sha (run-nbb [verify-bin fixture md-file tampered-edn] {})
+      _ (check (and (not= 0 (.-status bad-sha))
+                    (.includes (str (.-stderr bad-sha) (.-stdout bad-sha)) "pins"))
+               "verifier rejects an altered pinned sha256 naming the cause")
+      ;; Negative control (b): one row removed from the .md report.
+      lines (.split stdout "\n")
+      dropped (.join (.filter lines #(.includes % "| unavailable |")) "")
+      _ (check (pos? (count dropped)) "fixture has an unavailable row to drop")
+      trimmed-md (.join path workdir "trimmed.md")
+      _ (write-file trimmed-md (.join (.filter lines #(not= % dropped)) "\n"))
+      bad-md (run-nbb [verify-bin fixture trimmed-md edn-file] {})
+      _ (check (and (not= 0 (.-status bad-md))
+                    (.includes (str (.-stderr bad-md) (.-stdout bad-md)) "lists no row"))
+               "verifier rejects a .md with a removed row naming the cause")]
+  ;; Redirect guard: a loopback redirect to a host outside the allowlist must
+  ;; be reported :unavailable even though the pinned hash is correct.
+  (let [server-js (.join path workdir "loopback.js")]
+    (write-file server-js
+                (str "const http = require('http');\n"
+                     "const [port, mode, target] = process.argv.slice(2);\n"
+                     "http.createServer((req, res) => {\n"
+                     "  if (mode === 'redirect') { res.writeHead(302, {location: target}); res.end(); }\n"
+                     "  else { res.writeHead(200); res.end('redirect target body'); }\n"
+                     "}).listen(Number(port), '127.0.0.1');\n"))
+    (let [target-body "redirect target body"
+          static-proc (.spawn child "node" #js [server-js "8123" "static"])
+          redir-proc (.spawn child "node" #js [server-js "8124" "redirect" "http://127.0.0.1:8123/body"])]
+      (try
+        (loop [n 0]
+          (let [probe (try (.execFileSync child "curl"
+                                          #js ["--silent" "--output" "/dev/null" "--write-out" "%{http_code}"
+                                               "http://127.0.0.1:8123/body"])
+                           (catch :default _ nil))]
+            (when (and (not= "200" (when probe (.toString probe))) (< n 50))
+              (.execFileSync child "sleep" #js ["0.2"])
+              (recur (inc n)))))
+        (let [redir-root (.join path workdir "redir-sources")]
+          (.mkdirSync fs (.join path redir-root "jp.go.meti.enecho" "raw") #js {:recursive true})
+          (.mkdirSync fs (.join path redir-root "org.ourworldindata" "raw") #js {:recursive true})
+          (.mkdirSync fs (.join path redir-root "org.un.unstats" "raw") #js {:recursive true})
+          (write-file (.join path redir-root "jp.go.meti.enecho" "raw" "source-catalog.edn")
+                      (pr-str {:sources [{:source/id :t/redir
+                                          :source/url "http://127.0.0.1:8124/start"
+                                          :source/sha256 (sha256-hex target-body)}]}))
+          (write-file (.join path redir-root "org.ourworldindata" "raw" "source-catalog.edn")
+                      (pr-str {:sources []}))
+          (write-file (.join path redir-root "org.un.unstats" "raw" "source-catalog.edn")
+                      (pr-str {:sources []}))
+          (let [redir-edn (.join path workdir "redir.edn")
+                res (run-nbb [drift-bin redir-root]
+                             {"DRIFT_EDN_OUT" redir-edn "DRIFT_RETRY_DELAY_S" "0"})
+                rep (edn/parse-string (.toString (.readFileSync fs redir-edn)))
+                row (first (:report/rows rep))]
+            (check (and (= 0 (.-status res))
+                        (= :unavailable (:status row))
+                        (.includes (:failure-detail row) "allowed hosts"))
+                   "off-allowlist redirect is :unavailable, not followed")))
+        (finally (.kill static-proc) (.kill redir-proc)))))
+  (println "all upstream-drift offline checks passed"))
