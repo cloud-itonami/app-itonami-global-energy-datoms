@@ -1,0 +1,109 @@
+#!/usr/bin/env nbb
+(ns verify-cid-manifest
+  "Recompute the Yataverse CIDs declared in storage/cid-manifest.edn from the
+  committed projection files, and fail when a row is stale, a listed file is
+  missing, or a file under data/ or schema/ is not listed.
+
+  usage: nbb bin/verify-cid-manifest.cljk
+
+  Reads files only. It does not fetch, pin, upload, or write: a stale row is
+  a reviewed edit to storage/cid-manifest.edn, not something this script
+  repairs."
+  (:require [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def crypto (js/require "crypto"))
+
+(def manifest-file "storage/cid-manifest.edn")
+(def roots ["data" "schema"])
+
+;; The encoding itself, checked against a fixed vector that does not come
+;; from this repository. Derived from: CIDv1, codec raw (0x55), multihash
+;; sha2-256, multibase base32 lower-case without padding (prefix "b"), over
+;; the bytes 0x01 0x55 0x12 0x20 followed by the sha256 of the content.
+(def fixed-vector-input "hello world")
+(def fixed-vector-cid "bafkreifzjut3te2nhyekklss27nh3k72ysco7y32koao5eei66wof36n5e")
+
+(def b32-alphabet "abcdefghijklmnopqrstuvwxyz234567")
+
+(defn byte->bits [b]
+  (let [s (.toString b 2)]
+    (str (apply str (repeat (- 8 (count s)) "0")) s)))
+
+(defn base32-encode
+  "RFC 4648 base32, lower-case, no padding."
+  [byts]
+  (let [bits (apply str (map byte->bits byts))
+        n (count bits)
+        padded (+ n (mod (- 5 (mod n 5)) 5))
+        bits (str bits (apply str (repeat (- padded n) "0")))]
+    (apply str (map #(nth b32-alphabet (js/parseInt (subs bits % (+ % 5)) 2))
+                    (range 0 padded 5)))))
+
+(defn bytes-of [buf]
+  (map #(aget buf %) (range (.-length buf))))
+
+(defn sha256-bytes [buf]
+  (bytes-of (.digest (.update (.createHash crypto "sha256") buf))))
+
+(defn sha256-hex [buf]
+  (.digest (.update (.createHash crypto "sha256") buf) "hex"))
+
+(defn cid-of-bytes
+  "CIDv1 raw sha2-256 in base32-lower without padding."
+  [buf]
+  (str "b" (base32-encode (concat [0x01 0x55 0x12 0x20] (sha256-bytes buf)))))
+
+(defn slurp* [p] (.toString (.readFileSync fs p)))
+
+(defn list-files
+  "All regular files under dir, as paths relative to the repository root."
+  [dir]
+  (let [entries (vec (.readdirSync fs dir #js {:withFileTypes true}))]
+    (mapcat (fn [e]
+              (let [full (.join path dir (.-name e))]
+                (cond
+                  (.isDirectory e) (list-files full)
+                  (.isFile e) [(.relative path "." full)]
+                  :else [])))
+            entries)))
+
+(let [manifest (edn/parse-string (slurp* manifest-file))
+      rows (:files manifest)
+      _ (assert (and (sequential? rows) (pos? (count rows)))
+                (str manifest-file " declares no :files rows"))
+      _ (assert (= (count rows) (count (distinct (map :path rows))))
+                (str manifest-file " lists a :path more than once"))
+      ;; 1. The encoding itself, against the fixed vector.
+      actual-vector (cid-of-bytes (js/Buffer.from fixed-vector-input))
+      _ (assert (= actual-vector fixed-vector-cid)
+                (str "CID encoding disagrees with the fixed vector.\n"
+                     " input:    " (pr-str fixed-vector-input) "\n"
+                     " expected: " fixed-vector-cid "\n"
+                     " actual:   " actual-vector))
+      ;; 2. Every row recomputed from its file.
+      _ (doseq [{fpath :path bytes :bytes sha256 :sha256 cid :cid} rows]
+          (assert (and fpath bytes sha256 cid)
+                  (str manifest-file " has a row missing :path, :bytes, :sha256 or :cid: "
+                       (pr-str {:path fpath :bytes bytes :sha256 sha256 :cid cid})))
+          (assert (.existsSync fs fpath)
+                  (str "listed file is missing: " fpath))
+          (let [buf (.readFileSync fs fpath)]
+            (assert (= (.-length buf) bytes)
+                    (str "stale :bytes for " fpath
+                         ": manifest has " bytes
+                         ", file has " (.-length buf)))
+            (assert (= (sha256-hex buf) sha256)
+                    (str "stale :sha256 for " fpath))
+            (assert (= (cid-of-bytes buf) cid)
+                    (str "stale :cid for " fpath))))
+      ;; 3. No file under data/ or schema/ escapes the manifest.
+      listed (set (map :path rows))
+      on-disk (sort (mapcat list-files roots))
+      _ (doseq [f on-disk]
+          (assert (contains? listed f)
+                  (str "file under data/ or schema/ is not listed in "
+                       manifest-file ": " f)))]
+  (println (str "verified " (count rows) " cid-manifest rows; fixed vector "
+                (pr-str fixed-vector-input) " -> " actual-vector)))
