@@ -1,0 +1,158 @@
+#!/usr/bin/env nbb
+(ns verify-attribute-crosswalk
+  "Re-extract every attribute name used in schema/energy.edn,
+  coverage/*.edn and the projection files under data/, and fail when the
+  map in coverage/attribute-crosswalk.edn is stale: an attribute used in
+  the inputs but covered by no row, a mapped spelling that no longer
+  occurs, a recorded file list that no longer matches, or edited rows
+  whose integrity hash was not refreshed.
+
+  usage: nbb bin/verify-attribute-crosswalk.cljk [root]
+
+  Reads files only. It does not fetch, and it does not write: a stale
+  map is a reviewed edit to coverage/attribute-crosswalk.edn, not
+  something this script repairs. An attribute rename in the inputs
+  breaks this test by design; fix the map, never the data, and report
+  the rename.
+
+  Extraction rules (the contract the map is checked against):
+  - schema/energy.edn: top-level keys.
+  - *datascript-tx.edn: union of entity-map keys.
+  - *.kotoba.edn: distinct attribute slots of :datom/rows.
+  - coverage/registry.edn: entries of every :coverage/metrics vector,
+    every :coverage/geography-key, and every :join/local-key and
+    :join/remote-key that is a keyword.
+  - coverage/country-code-kinds.edn: keys of the
+    :country-code-kinds/rows entries (:code is a spelling of
+    :country/iso3, :in-m49-crosswalk? is a local column).
+  - *quality-report.edn: keys of :series/attributes (the top-level
+    data/quality-report.edn has none).
+  - data/provenance.edn: carries no attribute references; listed as an
+    input so it cannot change unnoticed.
+  File-format bookkeeping keys (:coverage/*, :source/*, :join/* policy
+  keys, :series/*, :quality/*, :build/*, :country-code-kinds/* envelope)
+  are not data attributes and are never extracted."
+  (:require [clojure.string :as str]
+            [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def crypto (js/require "crypto"))
+
+(def root (or (first *command-line-args*) "."))
+(def map-file "coverage/attribute-crosswalk.edn")
+
+(defn slurp* [p] (.toString (.readFileSync fs p)))
+(defn sha256-hex [s] (.digest (.update (.createHash crypto "sha256") s) "hex"))
+(defn fail! [msg] (throw (js/Error. (str "verify-attribute-crosswalk FAILED: " msg))))
+(defn join [rel] (.join path root rel))
+
+(defn registry-refs
+  "Attribute references inside coverage/registry.edn."
+  [doc]
+  (concat (mapcat (fn [row] (or (:coverage/metrics row) [])) (:coverage/sources doc))
+          (keep :coverage/geography-key (:coverage/sources doc))
+          (mapcat (fn [j] (filter keyword? [(:join/local-key j) (:join/remote-key j)]))
+                  (:coverage/external-joins doc))))
+
+(defn refs-in
+  "Distinct attribute names extracted from one input file."
+  [rel doc]
+  (distinct
+   (cond
+     (= rel "schema/energy.edn") (keys doc)
+     (str/ends-with? rel "datascript-tx.edn") (mapcat keys doc)
+     (str/ends-with? rel ".kotoba.edn") (map second (:datom/rows doc))
+     (= rel "coverage/registry.edn") (registry-refs doc)
+     (= rel "coverage/country-code-kinds.edn") (mapcat keys (:country-code-kinds/rows doc))
+     (str/ends-with? rel "quality-report.edn") (keys (:series/attributes doc))
+     :else [])))
+
+(defn edn-files-under
+  "Paths of regular .edn files directly under dir, relative to root."
+  [dir]
+  (let [abs (join dir)]
+    (when (.existsSync fs abs)
+      (->> (vec (.readdirSync fs abs #js {:withFileTypes true}))
+           (keep (fn [e] (when (and (.isFile e) (str/ends-with? (.-name e) ".edn"))
+                            (str dir "/" (.-name e)))))
+           sort))))
+
+(let [parsed (edn/parse-string (slurp* (join map-file)))
+      inputs (:crosswalk/inputs parsed)
+      rows (:crosswalk/rows parsed)
+      recorded-hash (:crosswalk/rows-sha256 parsed)
+      _ (when (or (not (sequential? inputs)) (empty? inputs))
+          (fail! (str map-file " declares no :crosswalk/inputs")))
+      _ (when (or (not (sequential? rows)) (empty? rows))
+          (fail! (str map-file " declares no :crosswalk/rows")))
+      _ (when (not= 1 (:crosswalk/version parsed))
+          (fail! (str map-file " has unknown :crosswalk/version "
+                      (pr-str (:crosswalk/version parsed)) "; this verifier reads version 1")))
+      ;; Every listed input exists; nothing under the input dirs escapes.
+      _ (doseq [rel inputs]
+          (when (not (.existsSync fs (join rel)))
+            (fail! (str "listed input is missing: " rel))))
+      ;; The map itself lives under coverage/ but is the map, not an input.
+      on-disk (remove #{map-file}
+                       (distinct (mapcat edn-files-under ["schema" "coverage" "data" "data/series"])))
+      _ (doseq [rel (sort (remove (set inputs) on-disk))]
+          (fail! (str "input file under schema/, coverage/ or data/ is not listed in "
+                      map-file ": " rel)))
+      ;; No duplicate canonical names or spellings.
+      canon (map :attribute/canonical rows)
+      _ (doseq [[c n] (frequencies canon) :when (< 1 n)]
+          (fail! (str "duplicate :attribute/canonical " (pr-str c))))
+      spelling->canon
+      (into {} (mapcat (fn [row]
+                         (map (fn [s] [(:spelling s) (:attribute/canonical row)])
+                              (:attribute/spellings row)))
+                       rows))
+      _ (let [dups (keep (fn [[s cs]] (when (< 1 (count cs)) s))
+                         (group-by first (mapcat (fn [row]
+                                                   (map (fn [s] [(:spelling s)])
+                                                        (:attribute/spellings row)))
+                                                 rows)))]
+          (when (seq dups)
+            (fail! (str "spelling mapped more than once: " (pr-str dups)))))
+      ;; Re-extract attribute names from the inputs.
+      extracted
+      (into {} (map (fn [rel]
+                      [rel (refs-in rel (edn/parse-string (slurp* (join rel))))])
+                    inputs))
+      by-spelling
+      (reduce (fn [acc [rel names]]
+                (reduce (fn [a n] (update a n (fnil conj #{}) rel)) acc names))
+              {} extracted)
+      ;; 1. Every used attribute is mapped.
+      _ (doseq [[spelling rels] (sort-by first by-spelling)
+                :when (not (contains? spelling->canon spelling))]
+          (fail! (str "attribute used in the inputs but covered by no row: "
+                      (pr-str spelling) " occurs in " (pr-str (sort rels)))))
+      ;; 2. Every mapped spelling still occurs where recorded.
+      _ (doseq [row rows
+                s (:attribute/spellings row)]
+          (let [sp (:spelling s)
+                recorded (set (:files s))
+                actual (get by-spelling sp #{})]
+            (when (empty? actual)
+              (fail! (str "mapped spelling no longer occurs in any input: "
+                          (pr-str sp) " (canonical " (pr-str (:attribute/canonical row)) ")")))
+            (when (not= recorded actual)
+              (fail! (str "stale :files for spelling " (pr-str sp)
+                          " (canonical " (pr-str (:attribute/canonical row)) ")"
+                          "\n recorded: " (pr-str (sort recorded))
+                          "\n actual:   " (pr-str (sort actual)))))))
+      ;; 3. Row content integrity: any edit must refresh the hash.
+      actual-hash (sha256-hex (pr-str rows))
+      _ (when (not= recorded-hash actual-hash)
+          (fail! (str "rows changed without refreshing :crosswalk/rows-sha256"
+                      "\n recorded: " recorded-hash
+                      "\n actual:   " actual-hash)))
+      sizes (into {} (map (fn [rel] [rel (.-length (.readFileSync fs (join rel)))]) inputs))]
+  (println (str "verified " (count rows) " crosswalk rows ("
+                (count spelling->canon) " spellings) against "
+                (count by-spelling) " distinct attribute names in "
+                (count inputs) " input files"))
+  (doseq [rel inputs]
+    (println (str rel " " (get sizes rel) " bytes"))))
