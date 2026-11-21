@@ -1,0 +1,176 @@
+#!/usr/bin/env nbb
+(ns verify-series
+  "Verify the additive World Bank 2000-2023 series projection.
+
+  usage: nbb bin/verify-series.cljk <source-checkouts-root>
+
+  Reads files only. It recomputes the three data/series/ outputs in memory
+  from the pinned input and fails when a committed file differs; fails when
+  the source checkout is not at the pinned revision; verifies input file
+  integrity against the source catalog; and checks, for three fixed
+  economy-years named below, that the projected values equal the raw
+  `value` fields."
+  (:require [kotoba.lang.text :as str]
+            [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def crypto (js/require "crypto"))
+(def source-root (or (first *command-line-args*) ".sources"))
+(defn slurp* [p] (.toString (.readFileSync fs p)))
+(defn json [p] (js->clj (js/JSON.parse (slurp* p)) :keywordize-keys true))
+(defn join [& xs] (str/join "/" xs))
+(defn valid-iso3? [s] (boolean (re-matches #"[A-Z]{3}" (or s ""))))
+(defn entity-id [source year id] (str source "-" year "-" id))
+(defn fail! [msg] (throw (js/Error. (str "verify-series FAILED: " msg))))
+
+(def indicator->attribute
+  {"EG.ELC.RNEW.ZS" :energy.electricity/renewable-share-percent
+   "EG.ELC.FOSL.ZS" :energy.electricity/fossil-share-percent
+   "EG.ELC.NUCL.ZS" :energy.electricity/nuclear-share-percent
+   "EG.FEC.RNEW.ZS" :energy.final/renewable-share-percent
+   "SP.POP.TOTL"    :demography/population-total
+   "NY.GDP.PCAP.CD" :economy/gdp-per-capita-current-usd
+   "SP.DYN.LE00.IN" :health/life-expectancy-at-birth-years
+   "IT.NET.USER.ZS" :connectivity/internet-users-percent})
+
+;; Fixed economy-years whose projected values are checked against the raw
+;; `value` fields. Each has a non-null value for all eight indicators.
+(def spot-checks [["JPN" 2021] ["USA" 2000] ["CHN" 2010]])
+
+(def lock (edn/parse-string (slurp* "sources.lock.edn")))
+(def series-pin
+  (let [rows (:sources-unwired lock)]
+    (when (not= 1 (count rows))
+      (fail! (str "sources.lock.edn :sources-unwired must pin exactly one series source, found "
+                  (count rows))))
+    (first rows)))
+(def pinned-revision (:revision series-pin))
+(def repo-dir
+  (let [repo (:repository series-pin)
+        tail (.pop (.split repo "/"))
+        dir (.replace tail "app-itonami-" "")]
+    (join source-root dir)))
+
+;; 1. The source checkout must be at the pinned revision.
+(def git-dir (join repo-dir ".git"))
+(def head-file (join git-dir "HEAD"))
+(when (not (.existsSync fs head-file))
+  (fail! (str "source checkout has no .git/HEAD to compare with the pinned revision: " repo-dir)))
+(def checked-out-revision
+  (let [head (.trim (slurp* head-file))]
+    (if (.startsWith head "ref:")
+      (let [ref (.trim (subs head 4))
+            ref-file (join git-dir ref)
+            packed (join git-dir "packed-refs")]
+        (cond
+          (.existsSync fs ref-file) (.trim (slurp* ref-file))
+          (.existsSync fs packed)
+          (let [line (first (filter #(.endsWith % (str " " ref))
+                                    (.split (slurp* packed) "\n")))]
+            (if line (first (.split line " "))
+                (fail! (str "cannot resolve " head " in " repo-dir))))
+          :else (fail! (str "cannot resolve " head " in " repo-dir))))
+      head)))
+(when (not= pinned-revision checked-out-revision)
+  (fail! (str "source checkout is at " checked-out-revision
+              " but sources.lock.edn pins " pinned-revision)))
+
+;; 2. Input integrity: every catalogued series file matches its sha256.
+(def wb-catalog (edn/parse-string (slurp* (join repo-dir "raw/source-catalog.edn"))))
+(def series-rows (sort-by :path (:series wb-catalog)))
+(when (not= (set (keys indicator->attribute)) (set (map :indicator series-rows)))
+  (fail! "source catalog :series indicators do not match the indicator-to-attribute table"))
+(doseq [{catalog-path :path expected :sha256} series-rows]
+  (let [actual (.digest (.update (.createHash crypto "sha256") (.readFileSync fs (join repo-dir catalog-path))) "hex")]
+    (when (not= expected actual)
+      (fail! (str "sha256 mismatch for series input " catalog-path)))))
+(def releases (distinct (map :retrieved-at series-rows)))
+(when (not= 1 (count releases)) (fail! "series rows disagree on :retrieved-at"))
+(def release (first releases))
+(def tx (js/parseInt (str/join "" (str/split (subs release 0 10) #"-" -1))))
+
+;; 3. Recompute the projection in memory.
+(def seen (atom #{}))
+(def merged
+  (reduce (fn [acc series-row]
+            (let [attr (get indicator->attribute (:indicator series-row))]
+              (when (nil? attr) (fail! (str "unknown series indicator: " (pr-str series-row))))
+              (reduce (fn [a row]
+                        (let [iso (:countryiso3code row)
+                              v (:value row)
+                              year (js/parseInt (:date row))]
+                          (if (valid-iso3? iso)
+                            (do (swap! seen conj [iso year])
+                                (if (number? v)
+                                  (update a [iso year] merge
+                                          {:energy.observation/id (entity-id "worldbank-wdi-series" year iso)
+                                           :energy.observation/source :source/worldbank-wdi-series
+                                           :energy.observation/release release
+                                           :country/iso3 iso
+                                           :country/name (get-in row [:country :value])
+                                           :energy/year year
+                                           attr v})
+                                  a))
+                            a)))
+                      acc (second (json (join repo-dir (:path series-row)))))))
+          {} series-rows))
+(def entities (mapv #(into (sorted-map) %) (sort-by :energy.observation/id (vals merged))))
+(def with-values (set (keys merged)))
+(def datoms
+  (vec (mapcat (fn [e] (for [[a v] (sort-by (comp str key) e)]
+                         [(:energy.observation/id e) a v tx :add]))
+               entities)))
+(def expected-tx "data/series/worldbank-wdi-2000-2023.datascript-tx.edn")
+(def expected-kotoba "data/series/worldbank-wdi-2000-2023.kotoba.edn")
+(def expected-quality "data/series/quality-report.edn")
+(def recomputed
+  [[expected-tx entities]
+   [expected-kotoba {:datom/format :eavt :datom/tx tx :datom/rows datoms}]
+   [expected-quality
+    {:series/repository (:repository series-pin)
+     :series/revision (:revision series-pin)
+     :series/release release
+     :series/entities (count entities)
+     :series/economies (count (distinct (map :country/iso3 entities)))
+     :series/years (vec (sort (distinct (map :energy/year entities))))
+     :series/attributes (into (sorted-map)
+                              (for [attr (sort (vals indicator->attribute))]
+                                [attr (count (filter #(contains? % attr) entities))]))
+     :series/empty-economy-years (count (remove with-values @seen))}]])
+
+;; 4. Committed files must equal the recomputation byte for byte.
+(doseq [[fpath expected] recomputed]
+  (when (not (.existsSync fs fpath))
+    (fail! (str "committed series file is missing: " fpath)))
+  (let [actual (slurp* fpath)
+        want (str (pr-str expected) "\n")]
+    (when (not= want actual)
+      (fail! (str "committed series file differs from the pinned-input recomputation: " fpath)))))
+
+;; 5. Spot checks: projected values equal the raw `value` fields.
+(def by-id (into {} (map (juxt :energy.observation/id identity) entities)))
+(doseq [[iso year] spot-checks]
+  (let [eid (entity-id "worldbank-wdi-series" year iso)
+        entity (get by-id eid)]
+    (when (nil? entity)
+      (fail! (str "spot-check entity is missing from the projection: " eid)))
+    (doseq [series-row series-rows]
+      (let [attr (get indicator->attribute (:indicator series-row))
+            rows (second (json (join repo-dir (:path series-row))))
+            raw (first (filter #(and (= iso (:countryiso3code %))
+                                     (= (str year) (:date %))
+                                     (number? (:value %)))
+                               rows))]
+        (when (nil? raw)
+          (fail! (str "spot-check raw value is missing for " eid " in " (:path series-row))))
+        (when (not= (:value raw) (get entity attr))
+          (fail! (str "spot-check value differs for " eid " " attr
+                      ": projected " (pr-str (get entity attr))
+                      ", raw " (pr-str (:value raw)))))))))
+
+(println (str "verified series projection at " pinned-revision ": "
+              (count entities) " entities, "
+              (count datoms) " datoms, "
+              (count spot-checks) " spot-checked economy-years "
+              (pr-str spot-checks)))

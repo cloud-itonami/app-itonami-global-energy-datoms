@@ -16,4 +16,15 @@
  ;; Owner item: add the app-itonami-states checkout step to contract.yml and
  ;; move this row to :joins. bin/verify-states-join.cljk reads both keys.
  :joins-unwired
- [{:join/id :join/states-country-directories :repository "network-awai/app-itonami-states" :revision "f7ab426dd61ecac135af14535528d27a90b0b990"}]}
+ [{:join/id :join/states-country-directories :repository "network-awai/app-itonami-states" :revision "f7ab426dd61ecac135af14535528d27a90b0b990"}]
+ ;; Pins for source inputs NOT checked out by .github/workflows/contract.yml
+ ;; yet. Workflow changes are reserved for the owner, and
+ ;; bin/verify-ci-lock.cljk requires every :sources and :joins row to appear
+ ;; in that workflow -- so a pin the workflow does not check out yet lives
+ ;; here, where the lock check does not read it. The single-year build keeps
+ ;; reading the :sources pin of org.worldbank.api above; the series build
+ ;; reads this key instead. Owner item: add the series checkout step to
+ ;; contract.yml and move this row to :sources. bin/verify-series.cljk reads
+ ;; this key.
+ :sources-unwired
+ [{:series/id :series/worldbank-wdi-2000-2023 :repository "cloud-itonami/app-itonami-org.worldbank.api" :revision "380b43a0177294dd68ab1abbc97ddaa3890f17f7"}]}
