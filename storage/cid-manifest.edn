@@ -42,6 +42,18 @@
    :bytes 709
    :sha256 "78e8d0d82006d028f8b4fa52f597eefd2242107b3c985e5cd1b6d9fe1bf1d354"
    :cid "bafkreidy5dinqiag2auprnh2kl2zp3x5ejbba6z4tbpfzunw3h7bx4otkq"}
+  {:path "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+   :bytes 4473027
+   :sha256 "9f140dbd22f5f819d9dddc84a7575019638e4db62d287494c79f79facb028c31"
+   :cid "bafkreie7cqg32ixv7am5txo4qstvouazmohe3nrnfb2jjr47ph5mwaumge"}
+  {:path "data/series/owid-electricity-1920-2025.kotoba.edn"
+   :bytes 10328041
+   :sha256 "4c4c35ca9d3ba88e0d7ca95385c82db5fe9bad3499535086f645dfe26bd6b0cc"
+   :cid "bafkreicmjq24vhj3vcha27fjkoc4qlnv72n22nezkniin5sf37rgxvvqzq"}
+  {:path "data/series/owid-electricity-1920-2025.quality-report.edn"
+   :bytes 955
+   :sha256 "a838b405d0224e007cc51a1d7ec7298cb771c486aa6a812cf4dab262d650cebc"
+   :cid "bafkreifihc2alubcjyahzri2dv7mokmmw5y4jbvknkasz5g2wjrnmugoxq"}
   {:path "schema/energy.edn"
    :bytes 1265
    :sha256 "5fe2b5d0cf978eb0defbe335d8d26190f13720089485a5b37b778bdc4b95f4dc"
