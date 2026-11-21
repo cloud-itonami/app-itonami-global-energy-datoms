@@ -15,7 +15,7 @@
 - `storage/cid-manifest.edn` は `data/` と `schema/` の各ファイルの Yataverse CID（単一 raw ブロック識別子。受入や可用性を示すものではない）。`nbb bin/verify-cid-manifest.cljk` が全行を再計算して照合する。
 - `coverage/attribute-crosswalk.edn` は `schema/energy.edn`・`coverage/*.edn`・`data/` 配下の各投影ファイルで使われる属性名の対応表（32 canonical 行・35 表記）。`:country/iso3` の別表記として `coverage/country-code-kinds.edn` の `:code`、法令側の `:jurisdiction/code`（national のみ）・states 側の `:directory-name`（大文字化した basename）を記録する。`nbb bin/verify-attribute-crosswalk.cljk [root]` が入力から属性名を再抽出して照合する。入力側の属性 rename はこのテストをわざと壊す。直すのは map の方で、data は変えない。rename を見つけたら報告する。
 - 出典と取得日: crosswalk 自体は自作の対応表で第三者の分類や定義文を含まない。参照する UN M49→ISO3 対応表は `coverage/country-code-kinds.edn` に pin 済み（`cloud-itonami/app-itonami-org.un.unstats`、`derived/m49-iso3.edn`、sha256 記録あり）。法令・states の結合キーは `coverage/registry.edn` の `:coverage/external-joins` と `sources.lock.edn` の `:joins` / `:joins-unwired` の pin（legislation `f3fc1e31`、states `f7ab426d`）を参照する。投影の snapshot 取得日は `data/provenance.edn` の `:build/as-of "2026-11-21"`。
-- `LICENSE` はこのリポジトリで私たちが作った部分（`coverage/attribute-crosswalk.edn`、`bin/verify-attribute-crosswalk.cljk`、この節を含む README の追記）にだけ適用される。`data/` の統計値は各出典の条件に従う。
+- この repo で作った部分（`coverage/attribute-crosswalk.edn`、`bin/verify-attribute-crosswalk.cljk`）の license は権利者の決定待ち。`data/` は各出典の条件のまま。
 
 再生成は、各 source dataset を `.sources/<dir>` に取得後、`nbb bin/build.cljk .sources [<snapshot-set>]` を実行する。入力の raw snapshot は各 source dataset の annex 管理対象であり、ビルドはネットワークへアクセスしない。UN SDG の M49 は、固定した UN M49→ISO3 対応表だけで ISO3 に結合する。
 
