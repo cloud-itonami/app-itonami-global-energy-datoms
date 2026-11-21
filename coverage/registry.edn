@@ -31,4 +31,22 @@
                    :remote-national-unmatched []
                    :remote-not-national ["ACHPR" "COE" "EU" "IACHR" "ICC" "ICJ" "ITLOS" "UN" "WTOAB"]
                    :local-distinct 278
-                   :local-unmatched 89}}]}
+                   :local-unmatched 89}}
+  {:join/id :join/states-country-directories
+   :join/repository "network-awai/app-itonami-states"
+   :join/directory "data/gov"
+   :join/local-key :country/iso3
+   ;; Not an attribute: the basename of each directory directly under
+   ;; data/gov/, compared upper-cased, exact string only.
+   :join/remote-key :directory-name
+   ;; The remote also holds non-country directories ("0" and "intl"), and
+   ;; "aru" is not ISO 3166-1 alpha-3 for Aruba (ABW) -- the shape of a name
+   ;; does not tell a country from anything else, so only exact matches join.
+   :join/rule "ディレクトリ名を大文字化した文字列との完全一致だけで結合する。名称や別表記からの推定結合は行わない（remote の ARU は local の ABW と結合しない。EU・XKX の別名主張もしない）。"
+   :join/local-key-caveat ":country/iso3 は ISO 3166-1 alpha-3 だけではない。World Bank の集計コード（WLD・EUU・ARB など）と XKX を含む。結合相手の無い値は :local-unmatched に数える。"
+   :join/measured {:remote-directories 203
+                   :remote-not-three-letter ["0" "INTL"]
+                   :matched 200
+                   :remote-unmatched ["0" "ARU" "INTL"]
+                   :local-distinct 278
+                   :local-unmatched 78}}]}
