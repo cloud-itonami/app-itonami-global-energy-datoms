@@ -7,4 +7,28 @@
   {:source/id :source/un-m49-overview :coverage/geography :global :coverage/country-observations 248 :coverage/metrics [:geo/m49 :country/iso3] :coverage/role :official-crosswalk}]
  :coverage/join-policy {:iso3 [:source/worldbank-wdi :source/our-world-in-data :source/jp-go-meti-enecho :source/un-sdg]
                         :m49 [:source/un-sdg]
-                        :rule "UN SDGのM49を、同じUN Statistics Divisionの固定済みM49→ISO3対応表でのみ機械的に結合する。名称文字列からの推定結合は行わない。"}}
+                        :rule "UN SDGのM49を、同じUN Statistics Divisionの固定済みM49→ISO3対応表でのみ機械的に結合する。名称文字列からの推定結合は行わない。"}
+ ;; Joins to OTHER repositories. Not a source of this dataset: nothing here is
+ ;; read by bin/build.cljk, and data/ does not change when a join changes.
+ ;; bin/verify-jurisdiction-join.cljk recomputes :join/measured from the two
+ ;; committed projections and fails when the numbers below are stale.
+ :coverage/external-joins
+ [{:join/id :join/legislation-jurisdictions
+   :join/repository "kotoba-lang/app-itonami-global-legislation-datoms"
+   :join/file "data/datascript-tx.edn"
+   :join/local-key :country/iso3
+   :join/remote-key :jurisdiction/code
+   ;; Only national jurisdictions are joined. The remote also holds
+   ;; supranational bodies and international courts, and three of their codes
+   ;; (COE, ICC, ICJ) are three capital letters, so the shape of a code does
+   ;; not tell a country from a court -- :jurisdiction/kind does.
+   :join/remote-filter {:jurisdiction/kind :national}
+   :join/rule "コード文字列の完全一致だけで結合する。名称や別表記からの推定結合は行わない（法令の EU とこちらの EUU は結合しない）。"
+   :join/local-key-caveat ":country/iso3 は ISO 3166-1 alpha-3 だけではない。World Bank の集計コード（WLD・EUU・ARB など）と XKX を含む。結合相手の無い値は :local-unmatched に数える。"
+   :join/measured {:remote-jurisdictions 198
+                   :remote-national 189
+                   :matched 189
+                   :remote-national-unmatched []
+                   :remote-not-national ["ACHPR" "COE" "EU" "IACHR" "ICC" "ICJ" "ITLOS" "UN" "WTOAB"]
+                   :local-distinct 278
+                   :local-unmatched 89}}]}
