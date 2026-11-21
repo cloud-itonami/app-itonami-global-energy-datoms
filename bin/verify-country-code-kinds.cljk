@@ -1,0 +1,111 @@
+#!/usr/bin/env nbb
+(ns verify-country-code-kinds
+  "Recompute the classification declared in coverage/country-code-kinds.edn
+  from the committed projection and the pinned UN M49 to ISO3 crosswalk, and
+  fail when the registered table is stale, the checkout is not at the pinned
+  revision, or the crosswalk file's sha256 differs from the recorded one.
+
+  usage: nbb bin/verify-country-code-kinds.cljk <checkout of the unstats repository>
+
+  Reads files only. It does not fetch, and it does not write: a table that
+  drifted is a reviewed edit to coverage/country-code-kinds.edn, not something
+  this script repairs."
+  (:require [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def crypto (js/require "crypto"))
+
+(defn slurp* [p] (.toString (.readFileSync fs p)))
+(defn sha256 [p] (-> (.createHash crypto "sha256") (.update (.readFileSync fs p)) (.digest "hex")))
+
+(defn head-revision
+  "The commit a checkout is at, read from .git without running git. nil when
+  it cannot be read -- an unknown revision is reported as unknown, never
+  assumed to be the locked one."
+  [root]
+  (let [head-file (.join path root ".git" "HEAD")]
+    (when (.existsSync fs head-file)
+      (let [head (.trim (slurp* head-file))]
+        (if-let [[_ ref] (re-matches #"ref: (.+)" head)]
+          (let [ref-file (.join path root ".git" ref)]
+            (when (.existsSync fs ref-file) (.trim (slurp* ref-file))))
+          head)))))
+
+(def remote-root
+  (or (first *command-line-args*)
+      (throw (ex-info "usage: verify-country-code-kinds.cljk <unstats checkout>" {}))))
+
+(def table-file "coverage/country-code-kinds.edn")
+(def local-file "data/datascript-tx.edn")
+(def row-keys #{:code :in-m49-crosswalk? :geo/m49 :energy.observation/source})
+
+(let [table    (edn/parse-string (slurp* table-file))
+      pin      (:country-code-kinds/crosswalk table)
+      expected (:country-code-kinds/rows table)
+      counts   (:country-code-kinds/counts table)
+      _        (assert (and pin (:repository pin) (:revision pin) (:file pin) (:sha256 pin))
+                      (str table-file " declares no complete :country-code-kinds/crosswalk pin"))
+      revision (head-revision remote-root)
+      _        (assert (or (nil? revision) (= revision (:revision pin)))
+                      (str "unstats checkout is at " revision
+                           ", the table pins " (:revision pin)))
+      crosswalk-file (.join path remote-root (:file pin))
+      _        (assert (.existsSync fs crosswalk-file)
+                      (str "crosswalk file is missing: " crosswalk-file))
+      actual-sha (sha256 crosswalk-file)
+      _        (assert (= actual-sha (:sha256 pin))
+                      (str "crosswalk file sha256 differs from the recorded one.\n recorded: "
+                           (:sha256 pin) "\n actual:   " actual-sha))
+      xw       (edn/parse-string (slurp* crosswalk-file))
+      entries  (:crosswalk/entries xw)
+      iso3->m49 (into (sorted-map)
+                      (map (fn [e] [(:country/iso3 e) (:geo/m49 e)]) entries))
+      local    (edn/parse-string (slurp* local-file))
+      codes    (sort (keys (dissoc (group-by :country/iso3 local) nil)))
+      measured (mapv (fn [code]
+                       (let [m49 (get iso3->m49 code)]
+                         (cond-> {:code code
+                                  :in-m49-crosswalk? (some? m49)
+                                  :energy.observation/source
+                                  (vec (sort (distinct (keep :energy.observation/source
+                                                            ((group-by :country/iso3 local) code)))))}
+                           (some? m49) (assoc :geo/m49 m49))))
+                     codes)]
+  ;; Evidence floors. Every count below is a filter over a collection, and an
+  ;; empty collection satisfies "nothing is unmatched" while classifying nothing.
+  (assert (pos? (count entries)) (str "no :crosswalk/entries in " crosswalk-file))
+  (assert (= (count entries) (count iso3->m49))
+          (str "crosswalk :country/iso3 is not unique in " crosswalk-file))
+  (assert (pos? (count codes)) (str "no :country/iso3 values in " local-file))
+  ;; A code not in the crosswalk is recorded as exactly that: no name, no
+  ;; aggregate or territory label, nothing from memory. Only the crosswalk's
+  ;; own :geo/m49 may appear, and only on rows the crosswalk covers.
+  (assert (every? #(every? row-keys (keys %)) expected)
+          (str table-file " has a row with a key outside " (pr-str row-keys)))
+  (assert (every? (fn [row]
+                    (if (:in-m49-crosswalk? row)
+                      (contains? row :geo/m49)
+                      (not (contains? row :geo/m49))))
+                  expected
+                  (str table-file " has a row whose :geo/m49 presence disagrees with :in-m49-crosswalk?")))
+  (assert (= (:total counts) (+ (:in-m49-crosswalk counts) (:not-in-m49-crosswalk counts)))
+          (str table-file " counts do not sum: " (pr-str counts)))
+  (assert (= (:total counts) (count expected))
+          (str table-file " declares " (:total counts) " codes but holds " (count expected) " rows"))
+  (let [bad-index (first (keep-indexed (fn [i [a b]] (when (not= a b) i))
+                                       (map vector expected measured)))]
+    (assert (nil? bad-index)
+            (str table-file " is stale.\n registered row " bad-index ": "
+                 (pr-str (get expected bad-index)) "\n measured row " bad-index ":   "
+                 (pr-str (get measured bad-index)))))
+  (println (pr-str {:status :ok
+                    :table {:file table-file :sha256 (sha256 table-file)}
+                    :crosswalk {:repository (:repository pin)
+                                :file (:file pin)
+                                :sha256 actual-sha
+                                :revision (or revision :unknown)
+                                :locked-revision (:revision pin)}
+                    :counts {:total (count codes)
+                             :in-m49-crosswalk (count (filter iso3->m49 codes))
+                             :not-in-m49-crosswalk (count (remove iso3->m49 codes))}})))
