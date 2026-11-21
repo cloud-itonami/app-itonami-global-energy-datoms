@@ -64,4 +64,8 @@ jobs:
       - name: Verify the jurisdiction join against the legislation projection
         run: npx nbb bin/verify-jurisdiction-join.cljk .joins/app-itonami-global-legislation-datoms
       - name: Exercise Datascript query contract
-        run: clojure -M test/query_contract.cljk
+        # .cljk sources are invisible to the JVM loader (ADR-2609111500), so
+        # the wrapper mirrors them as .cljc into a scratch overlay at runtime
+        # (pattern from kotoba's scripts/jvm-cljk-run.sh at the pinned sha).
+        # `clojure -Spath` inside it is the classpath half of AWAI-3816.
+        run: bin/query-contract-jvm.sh

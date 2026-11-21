@@ -10,4 +10,14 @@
        io.github.kotoba-lang/datalog
         {:git/url "https://github.com/kotoba-lang/kotoba.git"
          :git/sha "b94158fd48ec541b70d3c455912a06f407537ddc"
-         :deps/root "lib/kotoba.datalog"}}}
+         :deps/root "lib/kotoba.datalog"}
+       ;; kotoba.test tiebreak (AWAI-3816): lib/kotoba.text and
+        ;; lib/kotoba.datalog each name io.github.kotoba-lang/test via a
+        ;; different :local/root, which tools.deps cannot reconcile, so no
+        ;; clojure invocation in this repository can build a classpath. Pin
+        ;; it once here, at the same sha as every other floor, so there is
+        ;; a single version to choose.
+        io.github.kotoba-lang/test
+        {:git/url "https://github.com/kotoba-lang/kotoba.git"
+         :git/sha "b94158fd48ec541b70d3c455912a06f407537ddc"
+         :deps/root "lib/kotoba.test"}}}
