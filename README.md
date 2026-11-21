@@ -19,7 +19,7 @@
 - 単年投影は 2026-11-21 の再取得 snapshot から作る（`<snapshot-set>` の default）。`nbb bin/build.cljk .sources` は `raw/wdi/2026-11-21/`、`raw/grapher/2026-11-21/`、`raw/sdg/2026-11-21/`、`derived/2026-11-21/m49-iso3.edn` を読み、as-of と release を各 snapshot 行の `:retrieved-at` から取る。`nbb bin/build.cljk <old-checkouts> 2026-07-10` は旧 set を読み、旧 pin と組むと `main` の `data/` 4 ファイルをバイト単位で再現する。
 - METI に新しい snapshot は無い。上流が 2026-11-21 の自動取得に HTTP 403 を返したため、pin・release とも不変（`data/provenance.edn` の `:build/note` に記録）。
 - 列は名前で読む。上流 export は July 版と November 版の間で `Oil` と `Gas` の列位置を入れ替えたため、位置で読むと誤った値を書く。期待する列名・ファイルが一つでも欠けたら何も書き込まずに失敗する。
-- 単年の入力 pin は `sources.lock.edn` の `:sources-2026-11-21`（`bin/verify-ci-lock.cljk` は読まない。`:sources` は旧投影のまま残す）。workflow への配線は所有者の項目。検証は `nbb bin/verify-projection.cljk .sources`（4 ファイル再計算の一致・checkout revision）。UN の revision は、issue が挙げたものが remote に存在しないため、refresh branch 先端（`cb1fae3d`）を pin している。merge 時に所有者が確認する。
+- 単年の入力 pin は `sources.lock.edn` の `:sources-2026-11-21`（`bin/verify-ci-lock.cljk` は読まない。`:sources` は旧投影のまま残す）。workflow への配線は所有者の項目。検証は `nbb bin/verify-projection.cljk .sources`（4 ファイル再計算の一致・checkout revision）。UN の revision は merge 済みの `main` の commit（`e4c20495`）を pin している。merge 時に所有者が確認する。
 - 書き換わった単年 4 ファイルは Yataverse に書いていない。別の所有者承認が必要（`storage/yataverse-receipts/README.md`）。旧 receipt は `storage/yataverse-receipts/2026-07-10-snapshot/` に残す。
 
 Data contract は年・出典を属性として保持する。異なる年や方法論の値を同一観測値として上書きしない。

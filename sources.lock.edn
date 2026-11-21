@@ -36,12 +36,9 @@
  ;; appear in .github/workflows/contract.yml -- so pins the workflow does
  ;; not check out yet live here, where the lock check does not read them.
  ;; Owner item: add the 2026-11-21 snapshot checkout steps to contract.yml
- ;; and move these rows to :sources. The UN revision below is the
- ;; muse/awai-3650-un-refresh branch tip available on the remote; the
- ;; revision named in AWAI-3651 (e4c20491...) does not exist there, so the
- ;; owner confirms or re-pins it when that refresh merges.
+ ;; and move these rows to :sources.
  :sources-2026-11-21
  [{:source/id :source/worldbank-wdi :repository "cloud-itonami/app-itonami-org.worldbank.api" :revision "04a43f3ec7db5fb00b6e088f87358aa834733723"}
   {:source/id :source/our-world-in-data :repository "cloud-itonami/app-itonami-org.ourworldindata" :revision "0f13c95e5c7827e08ee7db4629adaa4c5e900fe0"}
   {:source/id :source/jp-go-meti-enecho :repository "etzhayyim/jp.go.meti.enecho" :revision "cc2d7e4f5400a1d6c06b6d8fa60345e37d8473b2"}
-  {:source/id :source/un-sdg :repository "cloud-itonami/app-itonami-org.un.unstats" :revision "cb1fae3d5252ca548432908726628f0a33d0b434"}]}
+  {:source/id :source/un-sdg :repository "cloud-itonami/app-itonami-org.un.unstats" :revision "e4c20495a5c85e3ea36ef8ce495f7b5cf55c9b43"}]}

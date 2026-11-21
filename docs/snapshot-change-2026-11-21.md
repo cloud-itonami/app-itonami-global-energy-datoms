@@ -13,12 +13,12 @@ Pins used (`sources.lock.edn :sources-2026-11-21`):
 - World Bank WDI `cloud-itonami/app-itonami-org.worldbank.api@04a43f3e` (`raw/wdi/2026-11-21/`, release `2026-11-21T02:48:33Z`)
 - Our World in Data `cloud-itonami/app-itonami-org.ourworldindata@0f13c95e` (`raw/grapher/2026-11-21/`, release `2026-11-21T02:37:15Z`)
 - METI `etzhayyim/jp.go.meti.enecho@cc2d7e4f` (unchanged; no new snapshot — its upstream answered HTTP 403 to automated requests on 2026-11-21)
-- UN SDG `cloud-itonami/app-itonami-org.un.unstats@cb1fae3d` (`raw/sdg/2026-11-21/`, releases `2026-11-21T02:47:03Z` / `2026-11-21T02:47:10Z`; crosswalk `derived/2026-11-21/m49-iso3.edn`)
+- UN SDG `cloud-itonami/app-itonami-org.un.unstats@e4c20495` (`raw/sdg/2026-11-21/`, releases `2026-11-21T02:47:03Z` / `2026-11-21T02:47:10Z`; crosswalk `derived/2026-11-21/m49-iso3.edn`)
 
-Two deviations from the issue text, both verified twice against the remote: the UN revision
-named in the issue (`e4c20491…`) does not exist in the UN repository — the build uses the
-`muse/awai-3650-un-refresh` branch tip, whose tree holds exactly the named files — and the
-`:datom/tx` moved from `20260710` to `20261121` with `:build/as-of` `2026-11-21`.
+One note on the issue text: the `:datom/tx` moved from `20260710` to `20261121` with
+`:build/as-of` `2026-11-21`. The UN pin is the merged `main` commit `e4c20495` named in the issue.
+The first build of this change read the pre-merge branch tip `cb1fae3d` instead; the two commits
+have identical trees (`git diff` is empty), and the projection was re-verified at `e4c20495`.
 
 ## Per-source observation counts
 
