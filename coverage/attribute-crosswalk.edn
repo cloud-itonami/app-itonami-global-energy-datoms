@@ -1,0 +1,338 @@
+{:crosswalk/version 1
+ :crosswalk/note "One row per distinct attribute name used in schema/energy.edn, coverage/*.edn and the projection files under data/. The canonical name is this repository's own spelling; :attribute/spellings records every other spelling that means the same thing (coverage-local columns and the remote join keys referenced from coverage/registry.edn). File-format bookkeeping keys (:coverage/*, :source/* values, :join/* policy keys, :series/*, :quality/*, :build/*, :country-code-kinds/* envelope) are not data attributes and are out of scope. No third-party list or definition text is republished here: domains are one-line descriptions written for this map."
+ :crosswalk/inputs
+ ["schema/energy.edn"
+  "coverage/registry.edn"
+  "coverage/country-code-kinds.edn"
+  "data/datascript-tx.edn"
+  "data/global-energy.kotoba.edn"
+  "data/provenance.edn"
+  "data/quality-report.edn"
+  "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+  "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+  "data/series/quality-report.edn"
+  "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+  "data/series/owid-electricity-1920-2025.kotoba.edn"
+  "data/series/owid-electricity-1920-2025.quality-report.edn"]
+ :crosswalk/rows-sha256 "f002cc9c93e2b9c53c564c5f5c3d341123b3d9681bdc7306ff13cdc4bf0885ed"
+ :crosswalk/rows
+ [{:attribute/canonical :connectivity/internet-users-percent
+   :attribute/domain "number: share of the population using the internet, percent"
+   :attribute/spellings
+   [{:spelling :connectivity/internet-users-percent
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/quality-report.edn"]}]}
+  {:attribute/canonical :country/iso3
+   :attribute/domain "code string: ISO 3166-1 alpha-3 where assigned, else a World Bank aggregate code (WLD, EUU, ARB, ...) or XKX; 279 distinct values, each classified in coverage/country-code-kinds.edn"
+   :attribute/spellings
+   [{:spelling :country/iso3
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"]}
+    {:spelling :code
+     :files ["coverage/country-code-kinds.edn"]
+     :note "row column holding the same code string"}
+    {:spelling :jurisdiction/code
+     :files ["coverage/registry.edn"]
+     :note "remote spelling: values live in the legislation repository projection; referenced here as :join/remote-key; national jurisdictions only"}
+    {:spelling :directory-name
+     :files ["coverage/registry.edn"]
+     :note "remote spelling: upper-cased basename of data/gov/ directories in the states repository; referenced here as :join/remote-key"}]}
+  {:attribute/canonical :country/name
+   :attribute/domain "full English name string of the country or aggregate economy (e.g. \"Japan\")"
+   :attribute/spellings
+   [{:spelling :country/name
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"]}]}
+  {:attribute/canonical :demography/population-total
+   :attribute/domain "integer: mid-year total population headcount"
+   :attribute/spellings
+   [{:spelling :demography/population-total
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/quality-report.edn"]}]}
+  {:attribute/canonical :economy/gdp-per-capita-current-usd
+   :attribute/domain "number: GDP per capita in current US dollars"
+   :attribute/spellings
+   [{:spelling :economy/gdp-per-capita-current-usd
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/quality-report.edn"]}]}
+  {:attribute/canonical :energy/year
+   :attribute/domain "integer: Gregorian year the observation belongs to"
+   :attribute/spellings
+   [{:spelling :energy/year
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"]}]}
+  {:attribute/canonical :energy.access/electricity-percent
+   :attribute/domain "number: share of the population with access to electricity, percent (UN SDG; single-year only)"
+   :attribute/spellings
+   [{:spelling :energy.access/electricity-percent
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"]}]}
+  {:attribute/canonical :energy.electricity/bioenergy-twh
+   :attribute/domain "number: electricity generated from bioenergy, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/bioenergy-twh
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/coal-twh
+   :attribute/domain "number: electricity generated from coal, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/coal-twh
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/fossil-share-percent
+   :attribute/domain "number: fossil share of electricity generation, percent"
+   :attribute/spellings
+   [{:spelling :energy.electricity/fossil-share-percent
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/gas-twh
+   :attribute/domain "number: electricity generated from gas, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/gas-twh
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/generation-100m-kwh
+   :attribute/domain "number: electricity generated in units of 100 million kWh (METI Japan row only)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/generation-100m-kwh
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"]}]}
+  {:attribute/canonical :energy.electricity/hydropower-twh
+   :attribute/domain "number: electricity generated from hydropower, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/hydropower-twh
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/non-fossil-share-percent
+   :attribute/domain "number: non-fossil share of electricity, percent (METI Japan row only)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/non-fossil-share-percent
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"]}]}
+  {:attribute/canonical :energy.electricity/nuclear-share-percent
+   :attribute/domain "number: nuclear share of electricity generation, percent"
+   :attribute/spellings
+   [{:spelling :energy.electricity/nuclear-share-percent
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/nuclear-twh
+   :attribute/domain "number: electricity generated from nuclear, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/nuclear-twh
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/oil-twh
+   :attribute/domain "number: electricity generated from oil, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/oil-twh
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/other-renewables-twh
+   :attribute/domain "number: electricity generated from other renewables, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/other-renewables-twh
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/renewable-share-percent
+   :attribute/domain "number: renewable share of electricity generation, percent"
+   :attribute/spellings
+   [{:spelling :energy.electricity/renewable-share-percent
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/renewables-including-hydro-share-percent
+   :attribute/domain "number: renewables including hydro share of electricity, percent (METI Japan row only)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/renewables-including-hydro-share-percent
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"]}]}
+  {:attribute/canonical :energy.electricity/solar-twh
+   :attribute/domain "number: electricity generated from solar, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/solar-twh
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.electricity/thermal-excluding-biomass-share-percent
+   :attribute/domain "number: thermal excluding biomass share of electricity, percent (METI Japan row only)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/thermal-excluding-biomass-share-percent
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"]}]}
+  {:attribute/canonical :energy.electricity/wind-twh
+   :attribute/domain "number: electricity generated from wind, terawatt-hours (0 recorded explicitly)"
+   :attribute/spellings
+   [{:spelling :energy.electricity/wind-twh
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.quality-report.edn"]}]}
+  {:attribute/canonical :energy.final/consumption-pj
+   :attribute/domain "number: total final energy consumption, petajoules (METI Japan row only)"
+   :attribute/spellings
+   [{:spelling :energy.final/consumption-pj
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"]}]}
+  {:attribute/canonical :energy.final/renewable-share-percent
+   :attribute/domain "number: renewable share of final energy consumption, percent"
+   :attribute/spellings
+   [{:spelling :energy.final/renewable-share-percent
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/quality-report.edn"]}]}
+  {:attribute/canonical :energy.observation/id
+   :attribute/domain "string: entity identity unique within its projection (e.g. \"worldbank-wdi-2022-AND\"); series projections use their own id prefixes so identities never collide across files"
+   :attribute/spellings
+   [{:spelling :energy.observation/id
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"]}]}
+  {:attribute/canonical :energy.observation/release
+   :attribute/domain "string: retrieval or release timestamp of the snapshot the entity was built from"
+   :attribute/spellings
+   [{:spelling :energy.observation/release
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"]}]}
+  {:attribute/canonical :energy.observation/source
+   :attribute/domain "keyword: which source projection the entity came from (:source/worldbank-wdi, :source/our-world-in-data, :source/jp-go-meti-enecho, :source/un-sdg, :source/worldbank-wdi-series, :source/our-world-in-data-series); also the per-row source column of coverage/country-code-kinds.edn"
+   :attribute/spellings
+   [{:spelling :energy.observation/source
+     :files ["schema/energy.edn"
+             "coverage/country-code-kinds.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/owid-electricity-1920-2025.datascript-tx.edn"
+             "data/series/owid-electricity-1920-2025.kotoba.edn"]}]}
+  {:attribute/canonical :geo/crosswalk-source
+   :attribute/domain "keyword: which crosswalk supplied :geo/m49 on that entity; only :source/un-m49-overview occurs"
+   :attribute/spellings
+   [{:spelling :geo/crosswalk-source
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"]}]}
+  {:attribute/canonical :geo/m49
+   :attribute/domain "string: UN M49 numeric area code, 3 characters (e.g. \"392\"); absent on aggregate and XKX entities that have no M49 row"
+   :attribute/spellings
+   [{:spelling :geo/m49
+     :files ["schema/energy.edn"
+             "coverage/registry.edn"
+             "coverage/country-code-kinds.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"]}]}
+  {:attribute/canonical :health/life-expectancy-at-birth-years
+   :attribute/domain "number: life expectancy at birth, years"
+   :attribute/spellings
+   [{:spelling :health/life-expectancy-at-birth-years
+     :files ["schema/energy.edn"
+             "data/datascript-tx.edn"
+             "data/global-energy.kotoba.edn"
+             "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+             "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+             "data/series/quality-report.edn"]}]}
+  {:attribute/canonical :in-m49-crosswalk?
+   :attribute/domain "boolean, local to coverage/country-code-kinds.edn: true when :code has a row in the pinned UN M49 to ISO3 table"
+   :attribute/spellings
+   [{:spelling :in-m49-crosswalk?
+     :files ["coverage/country-code-kinds.edn"]}]}]}
