@@ -9,7 +9,11 @@ the block at `acceptedAt` (`retentionUntil` 0 throughout).
   (AWAI-3623). Four of its five content identifiers are no longer in `../cid-manifest.edn` after
   the AWAI-3651 rebuild; see the README there for the old CIDs.
 
-No receipts have been written for the rewritten 2026-11-21 projection files
-(`data/datascript-tx.edn`, `data/global-energy.kotoba.edn`, `data/provenance.edn`,
-`data/quality-report.edn`). Writing them to Yataverse needs a separate owner approval: after it,
-store the new receipts in a new dated directory next to `2026-07-10-snapshot/`.
+- `2026-11-21/` holds the receipts for the ten files that are in `../cid-manifest.edn` after the
+  AWAI-3651 rebuild and had no receipt: the four single-year projection files and the six
+  `data/series/` files (World Bank 2000 to 2023, OWID 1920 to 2025). Written on 2026-11-21
+  (AWAI-3672, owner approval recorded on AWAI-3651). See the README there.
+
+`schema/energy.edn` did not change in the rebuild; its receipt is the one in
+`2026-07-10-snapshot/`. With that, every row of `../cid-manifest.edn` has a receipt for its current
+bytes as of 2026-11-21.
