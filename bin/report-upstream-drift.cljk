@@ -1,46 +1,135 @@
 #!/usr/bin/env kbb
 (ns report-upstream-drift
+  "Re-download every catalogued public-statistics URL and report whether the
+  bytes still hash to the pinned sha256. Read-only monitoring: this script
+  never updates a raw snapshot, lock, or release.
+
+  usage: nbb bin/report-upstream-drift.cljk [.sources]
+
+  The Markdown table on stdout keeps the historical shape consumed by
+  .github/workflows/upstream-drift.yml (status | source | detail) plus the
+  changed=/unavailable= counts. When the DRIFT_EDN_OUT environment variable
+  names a file, the same rows are additionally written there as EDN data
+  (url, pinned sha256, observed sha256 or the failure detail, status, bytes,
+  and the UTC time of the request) together with the script sha256 and the
+  locked source revisions, for the dated report under docs/upstream-drift/.
+
+  One request per catalogued URL, plus at most two retries on failure with a
+  pause between them (DRIFT_RETRY_DELAY_S, default 5). A URL whose redirect
+  chain leaves the public-statistics hosts named in the task allowance is
+  reported :unavailable, not followed: its bytes are discarded."
   (:require [kotoba.lang.text :as str]
             [edamame.core :as edn]))
 
 (def fs (js/require "fs"))
+(def path (js/require "path"))
+(def os (js/require "os"))
 (def crypto (js/require "crypto"))
 (def child-process (js/require "child_process"))
 (def root (or (first *command-line-args*) ".sources"))
 (def catalogs ["jp.go.meti.enecho/raw/source-catalog.edn"
                "org.ourworldindata/raw/source-catalog.edn"
                "org.un.unstats/raw/source-catalog.edn"])
+;; Public-statistics hosts the operator allowance names for this task.
+;; Redirects to any other http(s) host are not followed.
+(def allowed-hosts #{"ourworldindata.org" "unstats.un.org" "www.enecho.meti.go.jp"})
+(def max-attempts 3)
+(def retry-delay-s
+  (let [raw (aget js/process.env "DRIFT_RETRY_DELAY_S")]
+    (if (and raw (not= raw "")) (js/parseInt raw 10) 5)))
+(def edn-out (aget js/process.env "DRIFT_EDN_OUT"))
+(def script-path "bin/report-upstream-drift.cljk")
+(def lock-path "sources.lock.edn")
 (defn slurp* [p] (.toString (.readFileSync fs p)))
 (defn source-url [s] (or (:url s) (:source/url s)))
 (defn expected-sha [s] (or (:sha256 s) (:source/sha256 s) (:csv-sha256 s)))
-(defn sha256 [buffer]
+(defn sha256-hex [buffer]
   (-> (.createHash crypto "sha256") (.update (js/Buffer.from buffer)) (.digest "hex")))
-(defn check! [s]
+(defn utc-now [] (.toISOString (js/Date.)))
+(defn sleep-s [s]
+  (.execFileSync child-process "sleep" #js [(str s)]))
+(defn err-detail [error]
+  (let [m (str (or (.-message error) error))
+        n (count m)]
+    (subs m 0 (min 200 n))))
+(defn http-url? [u]
+  (or (.startsWith u "http://") (.startsWith u "https://")))
+(defn effective-host [u]
+  (try (.-hostname (js/URL. u)) (catch :default _ nil)))
+(defn curl-once
+  "Single GET of url into tmpfile. Returns {:http-code :effective-url}.
+  Throws on curl failure (connection, timeout, HTTP >= 400 via --fail)."
+  [url tmpfile]
+  (let [out (.execFileSync child-process "curl"
+                           #js ["--fail" "--location" "--silent" "--show-error"
+                                "--max-time" "120" "--max-filesize" "5242880"
+                                "--user-agent" "global-energy-datoms-drift-monitor/1.0"
+                                "--write-out" "%{http_code} %{url_effective}"
+                                "--output" tmpfile
+                                url]
+                           #js {:maxBuffer 65536})
+        parts (.split (.trim (.toString out)) " ")]
+    {:http-code (aget parts 0)
+     :effective-url (.join (.slice parts 1) " ")}))
+(defn check! [s tmpfile]
   (let [url (source-url s) expected (expected-sha s)]
     (if-not (and url expected)
-      {:status :not-configured :label (or (:title s) (:source/title s) (:reference s) (:source/id s))}
-      (try
-        (let [bytes (.execFileSync child-process "curl"
-                                  #js ["--fail" "--location" "--silent" "--show-error"
-                                       "--user-agent" "global-energy-datoms-drift-monitor/1.0" url]
-                                  #js {:maxBuffer (* 5 1024 1024)})
-              actual (sha256 bytes)]
-          {:status (if (= expected actual) :unchanged :changed)
-           :label url :expected expected :actual actual})
-        (catch :default error
-          {:status :unavailable :label url :detail (str error)})))))
-(defn line [{:keys [status label detail]}]
-  (str "| " (name status) " | " label " | " (or detail "") " |"))
+      {:status :not-configured
+       :label (str (or (:title s) (:source/title s) (:reference s) (:source/id s)))
+       :pinned-sha256 expected
+       :bytes nil
+       :requested-at-utc (utc-now)}
+      (loop [attempt 1]
+        (let [at (utc-now)
+              outcome (try {:ok (curl-once url tmpfile)}
+                           (catch :default error {:error (err-detail error)}))]
+          (cond
+            (:error outcome)
+            (if (< attempt max-attempts)
+              (do (sleep-s retry-delay-s) (recur (inc attempt)))
+              {:status :unavailable :url url :label url :pinned-sha256 expected
+               :failure-detail (:error outcome) :bytes nil :requested-at-utc at})
 
-(let [sources (mapcat (fn [catalog-path]
-                         (:sources (edn/parse-string (slurp* (str root "/" catalog-path)))))
-                       catalogs)
-      rows (map check! sources)
+            (and (http-url? (:effective-url (:ok outcome)))
+                 (not (contains? allowed-hosts (effective-host (:effective-url (:ok outcome))))))
+            {:status :unavailable :url url :label url :pinned-sha256 expected
+             :failure-detail (str "redirect to " (:effective-url (:ok outcome))
+                                 " leaves the allowed hosts; not followed")
+             :bytes nil :requested-at-utc at}
+
+            :else
+            (let [bytes (.readFileSync fs tmpfile)
+                  actual (sha256-hex bytes)]
+              {:status (if (= expected actual) :unchanged :changed)
+               :url url :label url :pinned-sha256 expected
+               :observed-sha256 actual :bytes (.-length bytes)
+               :requested-at-utc at})))))))
+(defn line [row]
+  (str "| " (name (:status row)) " | " (:label row) " | " (or (:failure-detail row) "") " |"))
+
+(let [tmpdir (.mkdtempSync fs (.join path (.tmpdir os) "upstream-drift-"))
+      tmpfile (.join path tmpdir "body.bin")
+      sources (mapcat (fn [catalog-path]
+                        (:sources (edn/parse-string (slurp* (str root "/" catalog-path)))))
+                      catalogs)
+      rows (mapv #(check! % tmpfile) sources)
+      _ (try (.rmSync fs tmpdir #js {:recursive true :force true}) (catch :default _ nil))
       report (str "# Upstream drift report\n\n"
                   "Read-only monitoring: this workflow never updates a raw snapshot, lock, or release.\n\n"
                   "| status | source | detail |\n|---|---|---|\n"
                   (str/join "\n" (map line rows)) "\n")]
   (println report)
+  (when edn-out
+    (let [lock (edn/parse-string (slurp* lock-path))
+          payload {:report/id "upstream-drift"
+                   :report/generated-at-utc (utc-now)
+                   :report/script script-path
+                   :report/script-sha256 (sha256-hex (.readFileSync fs script-path))
+                   :report/locked-sources (mapv (fn [{:keys [repository revision]}]
+                                                  {:repository repository :revision revision})
+                                                (:sources lock))
+                   :report/rows rows}]
+      (.writeFileSync fs edn-out (pr-str payload))))
   (when-let [summary (aget js/process.env "GITHUB_STEP_SUMMARY")]
     (.appendFileSync fs summary report))
   (println (str "changed=" (count (filter #(= :changed (:status %)) rows))
