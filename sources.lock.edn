@@ -8,4 +8,12 @@
  ;; Not sources of this dataset. Repositories that coverage/registry.edn
  ;; :coverage/external-joins is verified against, pinned the same way.
  :joins
- [{:join/id :join/legislation-jurisdictions :repository "kotoba-lang/app-itonami-global-legislation-datoms" :revision "f3fc1e3132b4ae4e0863576b42aed6e34afde562"}]}
+ [{:join/id :join/legislation-jurisdictions :repository "kotoba-lang/app-itonami-global-legislation-datoms" :revision "f3fc1e3132b4ae4e0863576b42aed6e34afde562"}]
+ ;; Pins NOT yet wired into .github/workflows/contract.yml. Workflow changes
+ ;; are reserved for the owner, and bin/verify-ci-lock.cljk requires every
+ ;; :joins row to appear in that workflow -- so a pin the workflow does not
+ ;; check out yet lives here, where the lock check does not read it.
+ ;; Owner item: add the app-itonami-states checkout step to contract.yml and
+ ;; move this row to :joins. bin/verify-states-join.cljk reads both keys.
+ :joins-unwired
+ [{:join/id :join/states-country-directories :repository "network-awai/app-itonami-states" :revision "f7ab426dd61ecac135af14535528d27a90b0b990"}]}
