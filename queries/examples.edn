@@ -6,6 +6,14 @@
            :where [?e :energy.observation/source :source/worldbank-wdi]
                   [?e :country/iso3 ?country]
                   [?e :energy.electricity/renewable-share-percent ?share]]}
+  :worldbank-wdi-series-renewable-share-jpn-2000-2023
+  {:args []
+   :query [:find ?year ?share
+           :in $
+           :where [?e :energy.observation/source :source/worldbank-wdi-series]
+                  [?e :country/iso3 "JPN"]
+                  [?e :energy/year ?year]
+                  [?e :energy.electricity/renewable-share-percent ?share]]}
   :solar-generation-2024
   {:args []
    :query [:find ?country ?twh

@@ -1,0 +1,113 @@
+#!/usr/bin/env nbb
+(ns build-series
+  "Project the World Bank 2000-2023 indicator time series into queryable
+  datoms NEXT TO the existing single-year projection, without changing it.
+
+  usage: nbb bin/build-series.cljk <source-checkouts-root>
+
+  Reads .sources/org.worldbank.api/raw/wdi-series/*.json and that
+  repository's raw/source-catalog.edn :series rows (no network), and writes:
+    data/series/worldbank-wdi-2000-2023.datascript-tx.edn
+    data/series/worldbank-wdi-2000-2023.kotoba.edn
+    data/series/quality-report.edn
+
+  Additive by design: one entity per economy and year, carrying every
+  indicator with a non-null value for that economy and year, mapped to the
+  SAME attributes bin/build.cljk uses for the same indicator codes.
+  Identity is :energy.observation/id \"worldbank-wdi-series-<year>-<code>\"
+  with :energy.observation/source :source/worldbank-wdi-series, so a series
+  observation never shares an identity with the single-year observation for
+  the same year. A null value produces no attribute; nothing is filled,
+  interpolated or carried forward. The economy-code filter is the same one
+  read-wb applies: :countryiso3code must match [A-Z]{3} and the JSON value
+  must be a number."
+  (:require [kotoba.lang.text :as str]
+            [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def source-root (or (first *command-line-args*) ".."))
+(defn slurp* [p] (.toString (.readFileSync fs p)))
+(defn write! [p x] (.writeFileSync fs p (str (pr-str x) "\n")))
+(defn json [p] (js->clj (js/JSON.parse (slurp* p)) :keywordize-keys true))
+(defn path [& xs] (str/join "/" xs))
+(defn valid-iso3? [s] (boolean (re-matches #"[A-Z]{3}" (or s ""))))
+(defn entity-id [source year id] (str source "-" year "-" id))
+
+(def wb-root (path source-root "org.worldbank.api"))
+
+;; Indicator codes to the SAME attributes bin/build.cljk uses for the same
+;; indicators. No attribute names are invented here.
+(def indicator->attribute
+  {"EG.ELC.RNEW.ZS" :energy.electricity/renewable-share-percent
+   "EG.ELC.FOSL.ZS" :energy.electricity/fossil-share-percent
+   "EG.ELC.NUCL.ZS" :energy.electricity/nuclear-share-percent
+   "EG.FEC.RNEW.ZS" :energy.final/renewable-share-percent
+   "SP.POP.TOTL"    :demography/population-total
+   "NY.GDP.PCAP.CD" :economy/gdp-per-capita-current-usd
+   "SP.DYN.LE00.IN" :health/life-expectancy-at-birth-years
+   "IT.NET.USER.ZS" :connectivity/internet-users-percent})
+
+(def lock (edn/parse-string (slurp* "sources.lock.edn")))
+(def series-pin
+  (let [rows (:sources-unwired lock)]
+    (assert (= 1 (count rows))
+            (str "sources.lock.edn :sources-unwired must pin exactly one series source, found "
+                 (count rows)))
+    (first rows)))
+
+(def catalog (edn/parse-string (slurp* (path wb-root "raw/source-catalog.edn"))))
+(def series-rows (sort-by :path (:series catalog)))
+(assert (= (set (keys indicator->attribute)) (set (map :indicator series-rows)))
+        "source catalog :series indicators do not match the indicator-to-attribute table")
+(def releases (distinct (map :retrieved-at series-rows)))
+(assert (= 1 (count releases)) "series rows disagree on :retrieved-at")
+(def release (first releases))
+(def tx (js/parseInt (str/join "" (str/split (subs release 0 10) #"-" -1))))
+
+(let [seen (atom #{})
+      merged (reduce (fn [acc series-row]
+                       (let [attr (get indicator->attribute (:indicator series-row))
+                             _ (assert attr (str "unknown series indicator: " (pr-str series-row)))
+                             rows (second (json (path wb-root (:path series-row))))]
+                         (reduce (fn [a row]
+                                   (let [iso (:countryiso3code row)
+                                         v (:value row)
+                                         year (js/parseInt (:date row))]
+                                     (if (valid-iso3? iso)
+                                       (do (swap! seen conj [iso year])
+                                           (if (number? v)
+                                             (update a [iso year] merge
+                                                     {:energy.observation/id (entity-id "worldbank-wdi-series" year iso)
+                                                      :energy.observation/source :source/worldbank-wdi-series
+                                                      :energy.observation/release release
+                                                      :country/iso3 iso
+                                                      :country/name (get-in row [:country :value])
+                                                      :energy/year year
+                                                      attr v})
+                                             a))
+                                       a)))
+                                 acc rows)))
+                     {} series-rows)
+      entities (mapv #(into (sorted-map) %) (sort-by :energy.observation/id (vals merged)))
+      with-values (set (keys merged))
+      datoms (vec (mapcat (fn [e] (for [[a v] (sort-by (comp str key) e)]
+                                        [(:energy.observation/id e) a v tx :add]))
+                          entities))
+      attr-counts (into (sorted-map)
+                        (for [attr (sort (vals indicator->attribute))]
+                          [attr (count (filter #(contains? % attr) entities))]))]
+  (.mkdirSync fs "data/series" #js {:recursive true})
+  (write! "data/series/worldbank-wdi-2000-2023.datascript-tx.edn" entities)
+  (write! "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+          {:datom/format :eavt :datom/tx tx :datom/rows datoms})
+  (write! "data/series/quality-report.edn"
+          {:series/repository (:repository series-pin)
+           :series/revision (:revision series-pin)
+           :series/release release
+           :series/entities (count entities)
+           :series/economies (count (distinct (map :country/iso3 entities)))
+           :series/years (vec (sort (distinct (map :energy/year entities))))
+           :series/attributes attr-counts
+           :series/empty-economy-years (count (remove with-values @seen))})
+  (println (str "built " (count entities) " WDI series observations; "
+                (count (remove with-values @seen)) " economy-years with no value at all")))

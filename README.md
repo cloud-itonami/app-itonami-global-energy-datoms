@@ -18,4 +18,10 @@
 
 Data contract は年・出典を属性として保持する。異なる年や方法論の値を同一観測値として上書きしない。
 
+- `data/series/worldbank-wdi-2000-2023.datascript-tx.edn` は World Bank WDI 8 指標の 2000–2023 時系列の加法的な投影（6264 economy-year entities）。`nbb bin/build-series.cljk .sources` が `.sources/org.worldbank.api/raw/wdi-series/*.json` と同 repository の `raw/source-catalog.edn` の `:series` 行だけから再生成する。ネットワークへアクセスしない。
+- `data/series/worldbank-wdi-2000-2023.kotoba.edn` は同内容の `[e a v tx :add]` EAVT。`data/series/quality-report.edn` は entities・distinct economies・存在年・属性別値数・値なし economy-year 数（欠測は補完しない）。
+- 時系列は単年投影と別物として同じ schema で読める。`schema/energy.edn` と同じ db に `db-with` してもよいし、別 db に分けてもよい。query は `:energy.observation/source :source/worldbank-wdi-series` で絞る（例 `:worldbank-wdi-series-renewable-share-jpn-2000-2023`）。単年側の `:source/worldbank-wdi` とは結合しない。分ける理由: `data/` 既存ファイルと `storage/yataverse-receipts/` はバイト同一のまま残すこと、同一 identity を共有しないこと（`:energy.observation/id "worldbank-wdi-series-<year>-<code>"`）。World Bank が単年 snapshot 後に値を改訂しているため、両方が残る（renewable electricity share 2021 は 73 economy-year が不一致）。
+- 適用 filter は単年の `read-wb` と同じ。`:countryiso3code` が `[A-Z]{3}` に一致し、JSON の `value` が数値である行だけを取り込む。null は属性を作らない（その economy-year に一つも値がなければ entity も作らない）。
+- 入力 pin は `sources.lock.edn` の `:sources-unwired`（`bin/verify-ci-lock.cljk` は読まない）。単年 build が読む `:sources` の World Bank pin は変えない。検証は `nbb bin/verify-series.cljk .sources`（再計算の一致・checkout revision・固定 3 economy-year の raw 値照合）。
+
 `upstream-drift.yml` は毎週、公開 URL のバイト列差分をジョブ要約に報告する。raw・lock・公開リリースを自動変更しないため、更新はレビュー可能な source dataset のコミットとして扱う。

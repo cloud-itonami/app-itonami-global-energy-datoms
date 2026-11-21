@@ -30,6 +30,18 @@
    :bytes 562
    :sha256 "c71b8ba3dbdef277475bbca1be7c2ede04e8fffa2c1786073f27761470d1b6d3"
    :cid "bafkreighdof2hw666j3uow54ug7hylw6atup76rmc6daopzhoykhbunw2m"}
+  {:path "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
+   :bytes 3827958
+   :sha256 "c0b25062282dedc85af3bfc6601c263a29269993b2ac0734576c43858ffede73"
+   :cid "bafkreigawjigekbn5xefv457yzqbyjr2fetjte5svqdtiv3miocy77w6om"}
+  {:path "data/series/worldbank-wdi-2000-2023.kotoba.edn"
+   :bytes 7771289
+   :sha256 "5e4218ecc5dcaf35b0d9822b77662234e7343c4316ed96729997f677ec3115d1"
+   :cid "bafkreic6iimozro4v423bwmcfn3wmiru442dyqyw5wlhfgmx6z36ymiv2e"}
+  {:path "data/series/quality-report.edn"
+   :bytes 709
+   :sha256 "78e8d0d82006d028f8b4fa52f597eefd2242107b3c985e5cd1b6d9fe1bf1d354"
+   :cid "bafkreidy5dinqiag2auprnh2kl2zp3x5ejbba6z4tbpfzunw3h7bx4otkq"}
   {:path "schema/energy.edn"
    :bytes 1265
    :sha256 "5fe2b5d0cf978eb0defbe335d8d26190f13720089485a5b37b778bdc4b95f4dc"
