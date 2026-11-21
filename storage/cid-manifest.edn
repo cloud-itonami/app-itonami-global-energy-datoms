@@ -1,0 +1,36 @@
+;; storage/cid-manifest.edn — Yataverse content identifiers for the committed
+;; projection files under data/ and schema/.
+;;
+;; Each :cid is a CIDv1 with codec raw (0x55) and multihash sha2-256, rendered
+;; in multibase base32 lower-case without padding (prefix "b"): the bytes
+;; 0x01 0x55 0x12 0x20 followed by the sha256 of the file. This is the
+;; single-raw-block identifier of the file bytes; it says nothing about
+;; whether a block of that size is accepted or available on any network.
+;; Nothing is uploaded by recording these identifiers here.
+{:manifest/version 1
+ :cid {:version 1
+       :codec "raw"
+       :codec-code 85
+       :multihash "sha2-256"
+       :multibase "base32-lower-no-padding"}
+ :files
+ [{:path "data/datascript-tx.edn"
+   :bytes 386295
+   :sha256 "7d3d76f7e0fc5eec43120ba286913545900e11bb5b9732b36d82b12919f38bf9"
+   :cid "bafkreid5hv3ppyh4l3wegeqlukdjcnkfsahbdo23s4zlg3mcweurt44l7e"}
+  {:path "data/global-energy.kotoba.edn"
+   :bytes 776917
+   :sha256 "0e2a16aa06ecf80868b225d6270b9b9ddecbd4d7238a0b09ee2f8f208df38164"
+   :cid "bafkreiaofilkubxm7aegrmrf2ytqxg4533f5jvzdrifqt3rpr4qi344bmq"}
+  {:path "data/provenance.edn"
+   :bytes 546
+   :sha256 "3752da9cc3a55ae07ec3367cbaaa17a9a56a377e8b0c11a9cf1ad19278349d9c"
+   :cid "bafkreibxklnjzq5fllqh5qzwps5kuf5juvvdo7ulbqi2tty22gjhqne5tq"}
+  {:path "data/quality-report.edn"
+   :bytes 562
+   :sha256 "c71b8ba3dbdef277475bbca1be7c2ede04e8fffa2c1786073f27761470d1b6d3"
+   :cid "bafkreighdof2hw666j3uow54ug7hylw6atup76rmc6daopzhoykhbunw2m"}
+  {:path "schema/energy.edn"
+   :bytes 1265
+   :sha256 "5fe2b5d0cf978eb0defbe335d8d26190f13720089485a5b37b778bdc4b95f4dc"
+   :cid "bafkreic74k25bt4xr2yn567dgxmneymq6e3saceuqws3g63xrpoexfpu3q"}]}
