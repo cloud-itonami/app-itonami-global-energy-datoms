@@ -15,21 +15,21 @@
        :multibase "base32-lower-no-padding"}
  :files
  [{:path "data/datascript-tx.edn"
-   :bytes 386295
-   :sha256 "7d3d76f7e0fc5eec43120ba286913545900e11bb5b9732b36d82b12919f38bf9"
-   :cid "bafkreid5hv3ppyh4l3wegeqlukdjcnkfsahbdo23s4zlg3mcweurt44l7e"}
+   :bytes 394584
+   :sha256 "d12340021d6bf43bde53ed7cf164399bdb266b4a0177051be34c0a909633a698"
+   :cid "bafkreigrenaaehll6q554u7nptywiom33mtgwsqbo4crxy2mbkijmm5gta"}
   {:path "data/global-energy.kotoba.edn"
-   :bytes 776917
-   :sha256 "0e2a16aa06ecf80868b225d6270b9b9ddecbd4d7238a0b09ee2f8f208df38164"
-   :cid "bafkreiaofilkubxm7aegrmrf2ytqxg4533f5jvzdrifqt3rpr4qi344bmq"}
+   :bytes 789615
+   :sha256 "724b1eec046474b7bb358e2ba1d73438972b8cb6fb754ff46eb11ff098315f26"
+   :cid "bafkreidsjmpoybdeos33wnmofoq5onbys4vyznx3ovh7i3vrd7yjqmk7ey"}
   {:path "data/provenance.edn"
-   :bytes 546
-   :sha256 "3752da9cc3a55ae07ec3367cbaaa17a9a56a377e8b0c11a9cf1ad19278349d9c"
-   :cid "bafkreibxklnjzq5fllqh5qzwps5kuf5juvvdo7ulbqi2tty22gjhqne5tq"}
+   :bytes 773
+   :sha256 "ba03d46d9720ef713c66768bce30b2f64b739d114add082ff94de0a37137147a"
+   :cid "bafkreif2apkg3fza55ytyztwrphdbmxwjnzz2ekk3uec76kn4crxcnyupi"}
   {:path "data/quality-report.edn"
    :bytes 562
-   :sha256 "c71b8ba3dbdef277475bbca1be7c2ede04e8fffa2c1786073f27761470d1b6d3"
-   :cid "bafkreighdof2hw666j3uow54ug7hylw6atup76rmc6daopzhoykhbunw2m"}
+   :sha256 "b8adb7237bd31f292ecc7e2240e5892a2cbb02840420e8e614040ada6c34212e"
+   :cid "bafkreifyvw3sg66td4us5td6ejaolcjkfs5qfbaeeduomfaeblngynbbfy"}
   {:path "data/series/worldbank-wdi-2000-2023.datascript-tx.edn"
    :bytes 3827958
    :sha256 "c0b25062282dedc85af3bfc6601c263a29269993b2ac0734576c43858ffede73"

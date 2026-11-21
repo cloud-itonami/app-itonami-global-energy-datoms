@@ -1,11 +1,46 @@
-#!/usr/bin/env kbb
+#!/usr/bin/env nbb
 (ns build
+  "Project the single-year energy snapshot into queryable datoms.
+
+  usage: nbb bin/build.cljk <source-checkouts-root> [<snapshot-set>]
+
+  <snapshot-set> selects, per source, which files are read:
+    \"2026-11-21\" (the default) reads the snapshots re-fetched on
+      2026-11-21: raw/wdi/2026-11-21/<same eight file names>,
+      raw/grapher/2026-11-21/electricity-prod-source-stacked.csv,
+      raw/sdg/2026-11-21/electricity-access-2022.p1.json,
+      raw/sdg/2026-11-21/renewable-final-energy-share-2022.p1.json and
+      derived/2026-11-21/m49-iso3.edn. Release and as-of fields come from
+      each snapshot row's own :retrieved-at in its source catalog.
+    \"2026-07-10\" reads the original July files (raw/wdi/<name>.json,
+      raw/grapher/electricity-prod-source-stacked.csv,
+      raw/sdg/<name>.json, derived/m49-iso3.edn) with the legacy release
+      constants, reproducing the files committed before the refresh.
+
+  METI has no new snapshot (its upstream answered HTTP 403 to automated
+  requests on 2026-11-21), so both sets read the same METI file.
+
+  CSV columns are read BY NAME: the upstream export swapped the positions
+  of the Oil and Gas columns between the July and November snapshots, so
+  a positional read would silently write wrong data. A missing file or a
+  missing expected column stops the build with a clear error before
+  anything is written."
   (:require [kotoba.lang.text :as str]
             [edamame.core :as edn]))
 
 (def fs (js/require "fs"))
 (def source-root (or (first *command-line-args*) ".."))
-(defn slurp* [p] (.toString (.readFileSync fs p)))
+(def snapshot-set (or (second *command-line-args*) "2026-11-21"))
+(defn fail! [msg] (throw (js/Error. msg)))
+(when-not (#{"2026-11-21" "2026-07-10"} snapshot-set)
+  (fail! (str "unknown snapshot set " (pr-str snapshot-set)
+              "; want \"2026-11-21\" or \"2026-07-10\"")))
+(def new-set? (= snapshot-set "2026-11-21"))
+(defn slurp* [p]
+  (when-not (.existsSync fs p)
+    (fail! (str "snapshot input is missing: " p
+                " (fetch the revision pinned in sources.lock.edn first); refusing to write wrong data")))
+  (.toString (.readFileSync fs p)))
 (defn write! [p x] (.writeFileSync fs p (str (pr-str x) "\n")))
 (defn json [p] (js->clj (js/JSON.parse (slurp* p)) :keywordize-keys true))
 (defn path [& xs] (str/join "/" xs))
@@ -27,40 +62,109 @@
                ["internet-users-percent-2022.json" :connectivity/internet-users-percent]])
 (def owid-columns {"Other renewables" :energy.electricity/other-renewables-twh "Bioenergy" :energy.electricity/bioenergy-twh "Solar" :energy.electricity/solar-twh "Wind" :energy.electricity/wind-twh "Hydropower" :energy.electricity/hydropower-twh "Nuclear" :energy.electricity/nuclear-twh "Oil" :energy.electricity/oil-twh "Gas" :energy.electricity/gas-twh "Coal" :energy.electricity/coal-twh})
 
+;; Per-source file selection for the snapshot set.
+(def wb-dir (if new-set? "raw/wdi/2026-11-21" "raw/wdi"))
+(def owid-file (if new-set?
+                 "raw/grapher/2026-11-21/electricity-prod-source-stacked.csv"
+                 "raw/grapher/electricity-prod-source-stacked.csv"))
+(def unsdg-files (if new-set?
+                   ["raw/sdg/2026-11-21/electricity-access-2022.p1.json"
+                    "raw/sdg/2026-11-21/renewable-final-energy-share-2022.p1.json"]
+                   ["raw/sdg/electricity-access-2022.json"
+                    "raw/sdg/renewable-final-energy-share-2022.json"]))
+(def m49-file (if new-set?
+                "derived/2026-11-21/m49-iso3.edn"
+                "derived/m49-iso3.edn"))
+
+;; Release and as-of fields. The old set keeps the legacy constants so it
+;; reproduces the committed files byte for byte; the new set takes them
+;; from each snapshot row's own :retrieved-at in its source catalog, never
+;; from today's date typed by hand.
+(defn catalog-retrieved-at [root rel]
+  (let [catalog (edn/parse-string (slurp* (path root "raw/source-catalog.edn")))
+        row (first (filter #(= rel (:path %))
+                           (concat (:sources catalog) (:snapshots catalog) (:series catalog))))
+        at (:retrieved-at row)]
+    (when-not (string? at)
+      (fail! (str "source catalog has no :retrieved-at for " rel
+                  "; refusing to write wrong data")))
+    at))
+
+(def config
+  (if new-set?
+    (let [wb-ats (mapv #(catalog-retrieved-at wb-root (path wb-dir %)) (map first wb-files))]
+      (when-not (= 1 (count (distinct wb-ats)))
+        (fail! (str "worldbank snapshot rows disagree on :retrieved-at: " (pr-str wb-ats))))
+      {:wb-release (first wb-ats)
+       :owid-release (catalog-retrieved-at owid-root owid-file)
+       :unsdg-releases (mapv #(catalog-retrieved-at unsdg-root %) unsdg-files)
+       :enecho-release "2026-04-14"
+       :build-as-of snapshot-set
+       :build-note "METI unchanged: its upstream answered HTTP 403 to automated requests on 2026-11-21, so there is no new snapshot; its pin and release are unchanged."
+       :tx (js/parseInt (str/join "" (str/split snapshot-set #"-" -1)))
+       :wb-repo "cloud-itonami/app-itonami-org.worldbank.api"
+       :owid-repo "cloud-itonami/app-itonami-org.ourworldindata"
+       :unsdg-repo "cloud-itonami/app-itonami-org.un.unstats"})
+    {:wb-release "2026-07-01"
+     :owid-release "grapher-electricity-prod-source-stacked"
+     :unsdg-releases ["2026-07-10" "2026-07-10"]
+     :enecho-release "2026-04-14"
+     :build-as-of "2026-07-10"
+     :tx 20260710
+     :wb-repo "etzhayyim/org.worldbank.api"
+     :owid-repo "etzhayyim/org.ourworldindata"
+     :unsdg-repo "etzhayyim/org.un.unstats"}))
+
+(def wb-release (:wb-release config))
+(def owid-release (:owid-release config))
+(def unsdg-releases (:unsdg-releases config))
+(def enecho-release (:enecho-release config))
+(def build-as-of (:build-as-of config))
+(def build-note (:build-note config))
+(def tx (:tx config))
+(def wb-repo (:wb-repo config))
+(def owid-repo (:owid-repo config))
+(def unsdg-repo (:unsdg-repo config))
+
 (defn read-wb []
   (reduce (fn [acc [filename attr]]
-            (let [rows (second (json (path wb-root "raw/wdi" filename)))]
+            (let [rows (second (json (path wb-root wb-dir filename)))]
               (reduce (fn [a row]
                         (let [iso (:countryiso3code row) v (:value row) year (js/parseInt (:date row))]
                           (if (and (valid-iso3? iso) (number? v))
-                            (update a [iso year] merge {:energy.observation/id (entity-id "worldbank-wdi" year iso) :energy.observation/source :source/worldbank-wdi :energy.observation/release "2026-07-01" :country/iso3 iso :country/name (get-in row [:country :value]) :energy/year year attr v}) a))) acc rows))) {} wb-files))
+                            (update a [iso year] merge {:energy.observation/id (entity-id "worldbank-wdi" year iso) :energy.observation/source :source/worldbank-wdi :energy.observation/release wb-release :country/iso3 iso :country/name (get-in row [:country :value]) :energy/year year attr v}) a))) acc rows))) {} wb-files))
 (defn read-owid []
-  (let [rows (str/split-lines (slurp* (path owid-root "raw/grapher/electricity-prod-source-stacked.csv"))) header (str/split (first rows) #"," -1) idx (zipmap header (range))]
+  (let [text (slurp* (path owid-root owid-file))
+        rows (str/split-lines text) header (str/split (first rows) #"," -1) idx (zipmap header (range))]
+    (doseq [col (concat ["Entity" "Code" "Year"] (keys owid-columns))]
+      (when-not (contains? idx col)
+        (fail! (str "owid input is missing expected column " (pr-str col)
+                    " in " owid-file "; refusing to write wrong data"))))
     (reduce (fn [acc line] (let [cols (str/split line #"," -1) iso (get cols (idx "Code"))]
                              (if (and (valid-iso3? iso) (= "2024" (get cols (idx "Year"))))
                                (let [metrics (into {} (keep (fn [[col attr]] (when-let [v (value (get cols (idx col)))] [attr v])) owid-columns))]
-                                 (if (seq metrics) (assoc acc iso (merge {:energy.observation/id (entity-id "owid-electricity" 2024 iso) :energy.observation/source :source/our-world-in-data :energy.observation/release "grapher-electricity-prod-source-stacked" :country/iso3 iso :country/name (get cols (idx "Entity")) :energy/year 2024} metrics)) acc)) acc))) {} (rest rows))))
+                                 (if (seq metrics) (assoc acc iso (merge {:energy.observation/id (entity-id "owid-electricity" 2024 iso) :energy.observation/source :source/our-world-in-data :energy.observation/release owid-release :country/iso3 iso :country/name (get cols (idx "Entity")) :energy/year 2024} metrics)) acc)) acc))) {} (rest rows))))
 (defn read-enecho []
   (let [series (edn/parse-string (slurp* (path enecho-root "derived/enecho-energy-timeseries.edn"))) row (first (filter #(= 2024 (:fy %)) (:series/observations series))) total (:generation-100m-kwh row)]
-    [{:energy.observation/id "enecho-total-energy-2024-JPN" :energy.observation/source :source/jp-go-meti-enecho :energy.observation/release "2026-04-14" :country/iso3 "JPN" :country/name "Japan" :energy/year 2024 :energy.final/consumption-pj (:final-energy-pj row) :energy.electricity/generation-100m-kwh total :energy.electricity/thermal-excluding-biomass-share-percent (* 100 (/ (:thermal-excluding-biomass-100m-kwh row) total)) :energy.electricity/non-fossil-share-percent (* 100 (/ (:non-fossil-100m-kwh row) total)) :energy.electricity/renewables-including-hydro-share-percent (* 100 (/ (:renewables-including-hydro-100m-kwh row) total))}]))
+    [{:energy.observation/id "enecho-total-energy-2024-JPN" :energy.observation/source :source/jp-go-meti-enecho :energy.observation/release enecho-release :country/iso3 "JPN" :country/name "Japan" :energy/year 2024 :energy.final/consumption-pj (:final-energy-pj row) :energy.electricity/generation-100m-kwh total :energy.electricity/thermal-excluding-biomass-share-percent (* 100 (/ (:thermal-excluding-biomass-100m-kwh row) total)) :energy.electricity/non-fossil-share-percent (* 100 (/ (:non-fossil-100m-kwh row) total)) :energy.electricity/renewables-including-hydro-share-percent (* 100 (/ (:renewables-including-hydro-100m-kwh row) total))}]))
 (defn read-m49->iso3 []
   (into {} (map (juxt :geo/m49 :country/iso3)
                 (:crosswalk/entries
-                 (edn/parse-string (slurp* (path unsdg-root "derived/m49-iso3.edn")))))))
+                 (edn/parse-string (slurp* (path unsdg-root m49-file)))))))
 (defn read-unsdg [m49->iso3]
-  (reduce (fn [acc [filename attr filter-row]]
+  (reduce (fn [acc [filename attr filter-row release]]
             (reduce (fn [a row] (let [m49 (:geoAreaCode row) v (:value row) year (int (:timePeriodStart row))]
                                   (if (and (re-matches #"[0-9]+" m49) (filter-row row) (not (str/blank? v)))
-                                    (update a [m49 year] merge {:energy.observation/id (entity-id "un-sdg" year m49) :energy.observation/source :source/un-sdg :energy.observation/release "2026-07-10" :geo/m49 m49 :country/name (:geoAreaName row) :energy/year year attr (value v)}
+                                    (update a [m49 year] merge {:energy.observation/id (entity-id "un-sdg" year m49) :energy.observation/source :source/un-sdg :energy.observation/release release :geo/m49 m49 :country/name (:geoAreaName row) :energy/year year attr (value v)}
                                             (when-let [iso3 (get m49->iso3 m49)]
                                               {:country/iso3 iso3 :geo/crosswalk-source :source/un-m49-overview}))
-                                    a))) acc (:data (json (path unsdg-root "raw/sdg" filename))))) {}
-          [["electricity-access-2022.json" :energy.access/electricity-percent #(= "ALLAREA" (get-in % [:dimensions :Location]))] ["renewable-final-energy-share-2022.json" :energy.final/renewable-share-percent (constantly true)]]))
+                                    a))) acc (:data (json (path unsdg-root filename))))) {}
+          (map vector unsdg-files [:energy.access/electricity-percent :energy.final/renewable-share-percent] [#(= "ALLAREA" (get-in % [:dimensions :Location])) (constantly true)] unsdg-releases)))
 (defn datoms [entities tx] (vec (mapcat (fn [e] (for [[a v] (sort-by (comp str key) e)] [(:energy.observation/id e) a v tx :add])) (sort-by :energy.observation/id entities))))
 
-(let [wb (vals (read-wb)) owid (vals (read-owid)) enecho (read-enecho) m49->iso3 (read-m49->iso3) unsdg (vals (read-unsdg m49->iso3)) entities (concat wb owid enecho unsdg) tx 20260710]
+(let [wb (vals (read-wb)) owid (vals (read-owid)) enecho (read-enecho) m49->iso3 (read-m49->iso3) unsdg (vals (read-unsdg m49->iso3)) entities (vec (concat wb owid enecho unsdg))]
   (.mkdirSync fs "data" #js {:recursive true})
-  (write! "data/datascript-tx.edn" (vec entities))
+  (write! "data/datascript-tx.edn" entities)
   (write! "data/global-energy.kotoba.edn" {:datom/format :eavt :datom/tx tx :datom/rows (datoms entities tx)})
-  (write! "data/provenance.edn" {:build/as-of "2026-07-10" :sources [{:source/id :source/worldbank-wdi :source/repo "etzhayyim/org.worldbank.api" :source/entities (count wb) :source/year 2022} {:source/id :source/our-world-in-data :source/repo "etzhayyim/org.ourworldindata" :source/entities (count owid) :source/year 2024} {:source/id :source/jp-go-meti-enecho :source/repo "etzhayyim/jp.go.meti.enecho" :source/entities (count enecho) :source/year 2024} {:source/id :source/un-sdg :source/repo "etzhayyim/org.un.unstats" :source/entities (count unsdg) :source/year 2022} {:source/id :source/un-m49-overview :source/repo "etzhayyim/org.un.unstats" :source/entities (count m49->iso3) :source/role :geo-crosswalk}]})
-  (println (str "built " (count wb) " WDI, " (count owid) " OWID, " (count enecho) " Eneqcho, and " (count unsdg) " UN SDG observations")))
+  (write! "data/provenance.edn" (cond-> {:build/as-of build-as-of :sources [{:source/id :source/worldbank-wdi :source/repo wb-repo :source/entities (count wb) :source/year 2022} {:source/id :source/our-world-in-data :source/repo owid-repo :source/entities (count owid) :source/year 2024} {:source/id :source/jp-go-meti-enecho :source/repo "etzhayyim/jp.go.meti.enecho" :source/entities (count enecho) :source/year 2024} {:source/id :source/un-sdg :source/repo unsdg-repo :source/entities (count unsdg) :source/year 2022} {:source/id :source/un-m49-overview :source/repo unsdg-repo :source/entities (count m49->iso3) :source/role :geo-crosswalk}]} build-note (assoc :build/note build-note)))
+  (println (str "built " (count wb) " WDI, " (count owid) " OWID, " (count enecho) " Eneqcho, and " (count unsdg) " UN SDG observations (" snapshot-set ")")))

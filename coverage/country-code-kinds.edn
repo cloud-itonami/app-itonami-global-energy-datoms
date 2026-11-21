@@ -1,5 +1,5 @@
 {:country-code-kinds/crosswalk {:repository "cloud-itonami/app-itonami-org.un.unstats" :revision "74dfcb69c3b0d98586afe4420c76d0d218e63089" :file "derived/m49-iso3.edn" :sha256 "6cbbf0ce170f0cf0268becc3f5c9608c1b7d317c2c19b6915b085a28b634526b"}
- :country-code-kinds/counts {:total 278 :in-m49-crosswalk 232 :not-in-m49-crosswalk 46}
+ :country-code-kinds/counts {:total 279 :in-m49-crosswalk 232 :not-in-m49-crosswalk 47}
  :country-code-kinds/rows
  [{:code "ABW" :in-m49-crosswalk? true :geo/m49 "533" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "AFE" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
@@ -10,7 +10,7 @@
   {:code "ALB" :in-m49-crosswalk? true :geo/m49 "008" :energy.observation/source [:source/our-world-in-data :source/worldbank-wdi]}
   {:code "AND" :in-m49-crosswalk? true :geo/m49 "020" :energy.observation/source [:source/worldbank-wdi]}
   {:code "ARB" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
-  {:code "ARE" :in-m49-crosswalk? true :geo/m49 "784" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
+  {:code "ARE" :in-m49-crosswalk? true :geo/m49 "784" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "ARG" :in-m49-crosswalk? true :geo/m49 "032" :energy.observation/source [:source/our-world-in-data :source/worldbank-wdi]}
   {:code "ARM" :in-m49-crosswalk? true :geo/m49 "051" :energy.observation/source [:source/our-world-in-data :source/worldbank-wdi]}
   {:code "ASM" :in-m49-crosswalk? true :geo/m49 "016" :energy.observation/source [:source/our-world-in-data :source/worldbank-wdi]}
@@ -79,6 +79,7 @@
   {:code "EST" :in-m49-crosswalk? true :geo/m49 "233" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "ETH" :in-m49-crosswalk? true :geo/m49 "231" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "EUU" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
+  {:code "FCV" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
   {:code "FIN" :in-m49-crosswalk? true :geo/m49 "246" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "FJI" :in-m49-crosswalk? true :geo/m49 "242" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "FLK" :in-m49-crosswalk? true :geo/m49 "238" :energy.observation/source [:source/un-sdg]}
@@ -130,7 +131,7 @@
   {:code "KAZ" :in-m49-crosswalk? true :geo/m49 "398" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "KEN" :in-m49-crosswalk? true :geo/m49 "404" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "KGZ" :in-m49-crosswalk? true :geo/m49 "417" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
-  {:code "KHM" :in-m49-crosswalk? true :geo/m49 "116" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
+  {:code "KHM" :in-m49-crosswalk? true :geo/m49 "116" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "KIR" :in-m49-crosswalk? true :geo/m49 "296" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "KNA" :in-m49-crosswalk? true :geo/m49 "659" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "KOR" :in-m49-crosswalk? true :geo/m49 "410" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
@@ -144,7 +145,7 @@
   {:code "LCN" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
   {:code "LDC" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
   {:code "LIE" :in-m49-crosswalk? true :geo/m49 "438" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
-  {:code "LKA" :in-m49-crosswalk? true :geo/m49 "144" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
+  {:code "LKA" :in-m49-crosswalk? true :geo/m49 "144" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "LMY" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
   {:code "LSO" :in-m49-crosswalk? true :geo/m49 "426" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "LTE" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
@@ -215,14 +216,14 @@
   {:code "RUS" :in-m49-crosswalk? true :geo/m49 "643" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "RWA" :in-m49-crosswalk? true :geo/m49 "646" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "SAS" :in-m49-crosswalk? false :energy.observation/source [:source/worldbank-wdi]}
-  {:code "SAU" :in-m49-crosswalk? true :geo/m49 "682" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
+  {:code "SAU" :in-m49-crosswalk? true :geo/m49 "682" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "SDN" :in-m49-crosswalk? true :geo/m49 "729" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "SEN" :in-m49-crosswalk? true :geo/m49 "686" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
-  {:code "SGP" :in-m49-crosswalk? true :geo/m49 "702" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
+  {:code "SGP" :in-m49-crosswalk? true :geo/m49 "702" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "SHN" :in-m49-crosswalk? true :geo/m49 "654" :energy.observation/source [:source/un-sdg]}
   {:code "SLB" :in-m49-crosswalk? true :geo/m49 "090" :energy.observation/source [:source/our-world-in-data :source/worldbank-wdi]}
   {:code "SLE" :in-m49-crosswalk? true :geo/m49 "694" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
-  {:code "SLV" :in-m49-crosswalk? true :geo/m49 "222" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
+  {:code "SLV" :in-m49-crosswalk? true :geo/m49 "222" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "SMR" :in-m49-crosswalk? true :geo/m49 "674" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
   {:code "SOM" :in-m49-crosswalk? true :geo/m49 "706" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "SPM" :in-m49-crosswalk? true :geo/m49 "666" :energy.observation/source [:source/un-sdg]}
@@ -261,7 +262,7 @@
   {:code "TWN" :in-m49-crosswalk? false :energy.observation/source [:source/our-world-in-data]}
   {:code "TZA" :in-m49-crosswalk? true :geo/m49 "834" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "UGA" :in-m49-crosswalk? true :geo/m49 "800" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
-  {:code "UKR" :in-m49-crosswalk? true :geo/m49 "804" :energy.observation/source [:source/un-sdg :source/worldbank-wdi]}
+  {:code "UKR" :in-m49-crosswalk? true :geo/m49 "804" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "URY" :in-m49-crosswalk? true :geo/m49 "858" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "USA" :in-m49-crosswalk? true :geo/m49 "840" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}
   {:code "UZB" :in-m49-crosswalk? true :geo/m49 "860" :energy.observation/source [:source/our-world-in-data :source/un-sdg :source/worldbank-wdi]}

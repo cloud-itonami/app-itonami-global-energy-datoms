@@ -1,0 +1,194 @@
+#!/usr/bin/env nbb
+(ns verify-projection
+  "Verify the single-year 2026-11-21 projection from the pinned new inputs.
+
+  usage: nbb bin/verify-projection.cljk <source-checkouts-root>
+
+  Reads files only. It takes the same <source-checkouts-root> layout
+  bin/build.cljk reads (.sources/org.worldbank.api and friends), and:
+  1. fails when a source checkout is not at the revision pinned in
+     sources.lock.edn :sources-2026-11-21;
+  2. recomputes data/datascript-tx.edn, data/global-energy.kotoba.edn,
+     data/provenance.edn and data/quality-report.edn in memory from those
+     pinned inputs (release fields from each snapshot row's own
+     :retrieved-at, columns read by name) and fails when a committed file
+     differs byte for byte.
+
+  This is the check that actually covers the new inputs: the lock check
+  (bin/verify-ci-lock.cljk) does not read :sources-2026-11-21, and the
+  workflow file it enforces is reserved for the owner."
+  (:require [kotoba.lang.text :as str]
+            [edamame.core :as edn]))
+
+(def fs (js/require "fs"))
+(def path (js/require "path"))
+(def source-root (or (first *command-line-args*) ".sources"))
+(defn slurp* [p] (.toString (.readFileSync fs p)))
+(defn fail! [msg] (throw (js/Error. (str "verify-projection FAILED: " msg))))
+(defn valid-iso3? [s] (boolean (re-matches #"[A-Z]{3}" (or s ""))))
+(defn value [s] (when-not (str/blank? s) (js/parseFloat s)))
+(defn entity-id [source year id] (str source "-" year "-" id))
+(defn join [& xs] (str/join "/" xs))
+
+(def lock (edn/parse-string (slurp* "sources.lock.edn")))
+(def pins (:sources-2026-11-21 lock))
+(when-not (and (sequential? pins) (= 4 (count pins)))
+  (fail! "sources.lock.edn :sources-2026-11-21 must pin exactly four sources"))
+(def wanted-ids #{:source/worldbank-wdi :source/our-world-in-data
+                  :source/jp-go-meti-enecho :source/un-sdg})
+(when-not (= wanted-ids (set (map :source/id pins)))
+  (fail! (str "sources.lock.edn :sources-2026-11-21 pins the wrong source ids: "
+              (pr-str (map :source/id pins)))))
+
+(defn checkout-dir [repository]
+  (let [tail (.pop (.split repository "/"))]
+    (join source-root (.replace tail "app-itonami-" ""))))
+
+(defn checked-out-revision [repo-dir]
+  (let [head-file (join repo-dir ".git" "HEAD")]
+    (when-not (.existsSync fs head-file)
+      (fail! (str "source checkout has no .git/HEAD to compare with the pinned revision: " repo-dir)))
+    (let [head (.trim (slurp* head-file))]
+      (if (.startsWith head "ref:")
+        (let [ref (.trim (subs head 4))
+              ref-file (join repo-dir ".git" ref)
+              packed (join repo-dir ".git" "packed-refs")]
+          (cond
+            (.existsSync fs ref-file) (.trim (slurp* ref-file))
+            (.existsSync fs packed)
+            (let [line (first (filter #(.endsWith % (str " " ref))
+                                      (.split (slurp* packed) "\n")))]
+              (if line (first (.split line " "))
+                  (fail! (str "cannot resolve " head " in " repo-dir))))
+            :else (fail! (str "cannot resolve " head " in " repo-dir))))
+        head))))
+
+;; 1. Every source checkout must be at its pinned revision.
+(doseq [{:keys [:source/id :repository :revision]} pins]
+  (let [dir (checkout-dir repository)
+        actual (checked-out-revision dir)]
+    (when-not (= revision actual)
+      (fail! (str "source checkout for " id " is at " actual
+                  " but sources.lock.edn pins " revision)))))
+
+(def wb-root (join source-root "org.worldbank.api"))
+(def owid-root (join source-root "org.ourworldindata"))
+(def enecho-root (join source-root "jp.go.meti.enecho"))
+(def unsdg-root (join source-root "org.un.unstats"))
+(def wb-dir "raw/wdi/2026-11-21")
+(def owid-file "raw/grapher/2026-11-21/electricity-prod-source-stacked.csv")
+(def unsdg-files ["raw/sdg/2026-11-21/electricity-access-2022.p1.json"
+                  "raw/sdg/2026-11-21/renewable-final-energy-share-2022.p1.json"])
+(def m49-file "derived/2026-11-21/m49-iso3.edn")
+(def wb-files [["renewable-electricity-share-2021.json" :energy.electricity/renewable-share-percent]
+               ["fossil-electricity-share-2022.json" :energy.electricity/fossil-share-percent]
+               ["nuclear-electricity-share-2022.json" :energy.electricity/nuclear-share-percent]
+               ["renewable-final-energy-share-2022.json" :energy.final/renewable-share-percent]
+               ["population-2022.json" :demography/population-total]
+               ["gdp-per-capita-current-usd-2022.json" :economy/gdp-per-capita-current-usd]
+               ["life-expectancy-2022.json" :health/life-expectancy-at-birth-years]
+               ["internet-users-percent-2022.json" :connectivity/internet-users-percent]])
+(def owid-columns {"Other renewables" :energy.electricity/other-renewables-twh "Bioenergy" :energy.electricity/bioenergy-twh "Solar" :energy.electricity/solar-twh "Wind" :energy.electricity/wind-twh "Hydropower" :energy.electricity/hydropower-twh "Nuclear" :energy.electricity/nuclear-twh "Oil" :energy.electricity/oil-twh "Gas" :energy.electricity/gas-twh "Coal" :energy.electricity/coal-twh})
+
+(defn read-file [p]
+  (when-not (.existsSync fs p)
+    (fail! (str "snapshot input is missing: " p
+                "; refusing to verify against wrong data")))
+  (.toString (.readFileSync fs p)))
+(defn read-json [p] (js->clj (js/JSON.parse (read-file p)) :keywordize-keys true))
+
+(defn catalog-retrieved-at [root rel]
+  (let [catalog (edn/parse-string (read-file (join root "raw/source-catalog.edn")))
+        row (first (filter #(= rel (:path %))
+                           (concat (:sources catalog) (:snapshots catalog) (:series catalog))))
+        at (:retrieved-at row)]
+    (when-not (string? at)
+      (fail! (str "source catalog has no :retrieved-at for " rel)))
+    at))
+
+;; Release fields from each snapshot row's own :retrieved-at.
+(def wb-ats (mapv #(catalog-retrieved-at wb-root (join wb-dir %)) (map first wb-files)))
+(when-not (= 1 (count (distinct wb-ats)))
+  (fail! (str "worldbank snapshot rows disagree on :retrieved-at: " (pr-str wb-ats))))
+(def wb-release (first wb-ats))
+(def owid-release (catalog-retrieved-at owid-root owid-file))
+(def unsdg-releases (mapv #(catalog-retrieved-at unsdg-root %) unsdg-files))
+(def enecho-release "2026-04-14")
+(def build-as-of "2026-11-21")
+(def build-note "METI unchanged: its upstream answered HTTP 403 to automated requests on 2026-11-21, so there is no new snapshot; its pin and release are unchanged.")
+(def tx 20261121)
+
+(defn read-wb []
+  (reduce (fn [acc [filename attr]]
+            (let [rows (second (read-json (join wb-root wb-dir filename)))]
+              (reduce (fn [a row]
+                        (let [iso (:countryiso3code row) v (:value row) year (js/parseInt (:date row))]
+                          (if (and (valid-iso3? iso) (number? v))
+                            (update a [iso year] merge {:energy.observation/id (entity-id "worldbank-wdi" year iso) :energy.observation/source :source/worldbank-wdi :energy.observation/release wb-release :country/iso3 iso :country/name (get-in row [:country :value]) :energy/year year attr v}) a))) acc rows))) {} wb-files))
+(defn read-owid []
+  (let [rows (str/split-lines (read-file (join owid-root owid-file)))
+        header (str/split (first rows) #"," -1) idx (zipmap header (range))]
+    (doseq [col (concat ["Entity" "Code" "Year"] (keys owid-columns))]
+      (when-not (contains? idx col)
+        (fail! (str "owid input is missing expected column " (pr-str col)
+                    " in " owid-file "; refusing to verify against wrong data"))))
+    (reduce (fn [acc line] (let [cols (str/split line #"," -1) iso (get cols (idx "Code"))]
+                             (if (and (valid-iso3? iso) (= "2024" (get cols (idx "Year"))))
+                               (let [metrics (into {} (keep (fn [[col attr]] (when-let [v (value (get cols (idx col)))] [attr v])) owid-columns))]
+                                 (if (seq metrics) (assoc acc iso (merge {:energy.observation/id (entity-id "owid-electricity" 2024 iso) :energy.observation/source :source/our-world-in-data :energy.observation/release owid-release :country/iso3 iso :country/name (get cols (idx "Entity")) :energy/year 2024} metrics)) acc)) acc))) {} (rest rows))))
+(defn read-enecho []
+  (let [series (edn/parse-string (read-file (join enecho-root "derived/enecho-energy-timeseries.edn"))) row (first (filter #(= 2024 (:fy %)) (:series/observations series))) total (:generation-100m-kwh row)]
+    [{:energy.observation/id "enecho-total-energy-2024-JPN" :energy.observation/source :source/jp-go-meti-enecho :energy.observation/release enecho-release :country/iso3 "JPN" :country/name "Japan" :energy/year 2024 :energy.final/consumption-pj (:final-energy-pj row) :energy.electricity/generation-100m-kwh total :energy.electricity/thermal-excluding-biomass-share-percent (* 100 (/ (:thermal-excluding-biomass-100m-kwh row) total)) :energy.electricity/non-fossil-share-percent (* 100 (/ (:non-fossil-100m-kwh row) total)) :energy.electricity/renewables-including-hydro-share-percent (* 100 (/ (:renewables-including-hydro-100m-kwh row) total))}]))
+(defn read-m49->iso3 []
+  (into {} (map (juxt :geo/m49 :country/iso3)
+                (:crosswalk/entries
+                 (edn/parse-string (read-file (join unsdg-root m49-file)))))))
+(defn read-unsdg [m49->iso3]
+  (reduce (fn [acc [filename attr filter-row release]]
+            (reduce (fn [a row] (let [m49 (:geoAreaCode row) v (:value row) year (int (:timePeriodStart row))]
+                                  (if (and (re-matches #"[0-9]+" m49) (filter-row row) (not (str/blank? v)))
+                                    (update a [m49 year] merge {:energy.observation/id (entity-id "un-sdg" year m49) :energy.observation/source :source/un-sdg :energy.observation/release release :geo/m49 m49 :country/name (:geoAreaName row) :energy/year year attr (value v)}
+                                            (when-let [iso3 (get m49->iso3 m49)]
+                                              {:country/iso3 iso3 :geo/crosswalk-source :source/un-m49-overview}))
+                                    a))) acc (:data (read-json (join unsdg-root filename))))) {}
+          (map vector unsdg-files [:energy.access/electricity-percent :energy.final/renewable-share-percent] [#(= "ALLAREA" (get-in % [:dimensions :Location])) (constantly true)] unsdg-releases)))
+(defn datoms [entities tx] (vec (mapcat (fn [e] (for [[a v] (sort-by (comp str key) e)] [(:energy.observation/id e) a v tx :add])) (sort-by :energy.observation/id entities))))
+
+;; 2. Recompute the four files in memory and compare byte for byte.
+(let [wb (vals (read-wb)) owid (vals (read-owid)) enecho (read-enecho)
+      m49->iso3 (read-m49->iso3) unsdg (vals (read-unsdg m49->iso3))
+      entities (vec (concat wb owid enecho unsdg))
+      by-source (into (sorted-map)
+                      (for [[source xs] (group-by :energy.observation/source entities)]
+                        [source {:entities (count xs)
+                                 :with-iso3 (count (filter :country/iso3 xs))
+                                 :with-year (count (filter :energy/year xs))}]))
+      missing-provenance (count (filter #(or (nil? (:energy.observation/source %))
+                                             (nil? (:energy.observation/release %))
+                                             (nil? (:energy/year %))) entities))
+      recomputed [["data/datascript-tx.edn" entities]
+                  ["data/global-energy.kotoba.edn" {:datom/format :eavt :datom/tx tx :datom/rows (datoms entities tx)}]
+                  ["data/provenance.edn" (assoc {:build/as-of build-as-of :sources [{:source/id :source/worldbank-wdi :source/repo "cloud-itonami/app-itonami-org.worldbank.api" :source/entities (count wb) :source/year 2022} {:source/id :source/our-world-in-data :source/repo "cloud-itonami/app-itonami-org.ourworldindata" :source/entities (count owid) :source/year 2024} {:source/id :source/jp-go-meti-enecho :source/repo "etzhayyim/jp.go.meti.enecho" :source/entities (count enecho) :source/year 2024} {:source/id :source/un-sdg :source/repo "cloud-itonami/app-itonami-org.un.unstats" :source/entities (count unsdg) :source/year 2022} {:source/id :source/un-m49-overview :source/repo "cloud-itonami/app-itonami-org.un.unstats" :source/entities (count m49->iso3) :source/role :geo-crosswalk}]} :build/note build-note)]
+                  ["data/quality-report.edn" {:quality/as-of build-as-of
+                                              :quality/entities (count entities)
+                                              :quality/observations (count entities)
+                                              :quality/missing-required-provenance missing-provenance
+                                              :quality/un-sdg-with-official-iso3
+                                              (count (filter #(and (= :source/un-sdg (:energy.observation/source %))
+                                                                  (= :source/un-m49-overview (:geo/crosswalk-source %))) entities))
+                                              :quality/sources by-source
+                                              :quality/thresholds {:minimum-observations 900
+                                                                  :minimum-wdi-iso3 450
+                                                                  :minimum-owid-iso3 150
+                                                                  :minimum-un-sdg-official-iso3 180
+                                                                  :maximum-missing-required-provenance 0}}]]]
+  (doseq [[fpath expected] recomputed]
+    (when-not (.existsSync fs fpath)
+      (fail! (str "committed projection file is missing: " fpath)))
+    (let [actual (slurp* fpath)
+          want (str (pr-str expected) "\n")]
+      (when-not (= want actual)
+        (fail! (str "committed file differs from the pinned-input recomputation: " fpath)))))
+  (println (str "verified single-year 2026-11-21 projection: "
+                (count wb) " WDI, " (count owid) " OWID, "
+                (count enecho) " Eneqcho, " (count unsdg) " UN SDG observations")))
