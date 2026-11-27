@@ -36,8 +36,8 @@ jobs:
           path: .sources/org.un.unstats
       - uses: actions/checkout@v4
         with:
-          repository: kotoba-lang/app-itonami-global-legislation-datoms
-          ref: f3fc1e3132b4ae4e0863576b42aed6e34afde562
+          repository: cloud-itonami/app-itonami-global-legislation-datoms
+          ref: 3849e1ef215420821f9d17fdb6f9a29dec90b406
           path: .joins/app-itonami-global-legislation-datoms
       - uses: actions/setup-node@v4
         with:

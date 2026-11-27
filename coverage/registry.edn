@@ -14,7 +14,7 @@
  ;; committed projections and fails when the numbers below are stale.
  :coverage/external-joins
  [{:join/id :join/legislation-jurisdictions
-   :join/repository "kotoba-lang/app-itonami-global-legislation-datoms"
+   :join/repository "cloud-itonami/app-itonami-global-legislation-datoms"
    :join/file "data/datascript-tx.edn"
    :join/local-key :country/iso3
    :join/remote-key :jurisdiction/code
