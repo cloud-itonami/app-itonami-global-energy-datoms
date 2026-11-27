@@ -20,7 +20,7 @@
  ;; Not sources of this dataset. Repositories that coverage/registry.edn
  ;; :coverage/external-joins is verified against, pinned the same way.
  :joins
- [{:join/id :join/legislation-jurisdictions :repository "kotoba-lang/app-itonami-global-legislation-datoms" :revision "f3fc1e3132b4ae4e0863576b42aed6e34afde562"}]
+ [{:join/id :join/legislation-jurisdictions :repository "cloud-itonami/app-itonami-global-legislation-datoms" :revision "3849e1ef215420821f9d17fdb6f9a29dec90b406"}]
  ;; Pins NOT yet wired into .github/workflows/contract.yml. Workflow changes
  ;; are reserved for the owner, and bin/verify-ci-lock.cljk requires every
  ;; :joins row to appear in that workflow -- so a pin the workflow does not
