@@ -21,18 +21,18 @@ jobs:
           path: .sources/jp.go.meti.enecho
       - uses: actions/checkout@v4
         with:
-          repository: etzhayyim/org.worldbank.api
-          ref: 0869056d9baa7858c1da25e4e22324b7147cab05
+          repository: cloud-itonami/app-itonami-org.worldbank.api
+          ref: 04a43f3ec7db5fb00b6e088f87358aa834733723
           path: .sources/org.worldbank.api
       - uses: actions/checkout@v4
         with:
-          repository: etzhayyim/org.ourworldindata
-          ref: c63c1aeaf654f125191b3ba25c01c4b78851dcef
+          repository: cloud-itonami/app-itonami-org.ourworldindata
+          ref: 0f13c95e5c7827e08ee7db4629adaa4c5e900fe0
           path: .sources/org.ourworldindata
       - uses: actions/checkout@v4
         with:
-          repository: etzhayyim/org.un.unstats
-          ref: 0bfe52c5e3296953d532327e163183cab7485f5e
+          repository: cloud-itonami/app-itonami-org.un.unstats
+          ref: e4c20495a5c85e3ea36ef8ce495f7b5cf55c9b43
           path: .sources/org.un.unstats
       - uses: actions/checkout@v4
         with:
